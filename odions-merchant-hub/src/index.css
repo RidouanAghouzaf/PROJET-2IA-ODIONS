@@ -1,0 +1,211 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ODIONS SaaS Platform Design System */
+
+@layer base {
+  :root {
+    /* Core Brand Colors */
+    --background: 240 10% 98%;
+    --foreground: 240 10% 8%;
+    
+    /* Primary Brand - Professional Blue */
+    --primary: 217 91% 60%;
+    --primary-foreground: 0 0% 100%;
+    --primary-glow: 217 91% 70%;
+    --primary-dark: 217 91% 50%;
+    
+    /* Secondary - Purple Accent */
+    --secondary: 270 95% 75%;
+    --secondary-foreground: 0 0% 100%;
+    --secondary-dark: 270 95% 65%;
+    
+    /* Success States */
+    --success: 142 76% 36%;
+    --success-foreground: 0 0% 100%;
+    --success-light: 142 76% 46%;
+    
+    /* Warning States */
+    --warning: 45 93% 47%;
+    --warning-foreground: 0 0% 100%;
+    --warning-light: 45 93% 57%;
+    
+    /* Destructive States */
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --destructive-light: 0 84% 70%;
+    
+    /* Neutral Palette */
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 8%;
+    --card-border: 240 6% 90%;
+    
+    --muted: 240 5% 96%;
+    --muted-foreground: 240 4% 46%;
+    
+    --accent: 240 5% 96%;
+    --accent-foreground: 240 9% 10%;
+    
+    /* Form Elements */
+    --border: 240 6% 90%;
+    --input: 240 6% 90%;
+    --ring: 217 91% 60%;
+    
+    /* Overlays */
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 8%;
+    
+    /* Gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(217 91% 60%), hsl(270 95% 75%));
+    --gradient-subtle: linear-gradient(180deg, hsl(240 10% 98%), hsl(240 5% 96%));
+    --gradient-glass: linear-gradient(135deg, rgba(255,255,255,0.1), rgba(255,255,255,0.05));
+    
+    /* Shadows */
+    --shadow-sm: 0 1px 2px 0 hsl(240 6% 10% / 0.05);
+    --shadow-md: 0 4px 6px -1px hsl(240 6% 10% / 0.1), 0 2px 4px -2px hsl(240 6% 10% / 0.1);
+    --shadow-lg: 0 10px 15px -3px hsl(240 6% 10% / 0.1), 0 4px 6px -4px hsl(240 6% 10% / 0.1);
+    --shadow-glow: 0 0 40px hsl(217 91% 60% / 0.3);
+    
+    /* Sidebar */
+    --sidebar-background: 240 6% 97%;
+    --sidebar-foreground: 240 5% 26%;
+    --sidebar-primary: 217 91% 60%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 6% 94%;
+    --sidebar-accent-foreground: 240 9% 10%;
+    --sidebar-border: 240 6% 90%;
+    --sidebar-ring: 217 91% 60%;
+    
+    /* Animations */
+    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-bounce: all 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+    
+    --radius: 0.75rem;
+  }
+
+  .dark {
+    /* Dark Mode */
+    --background: 240 10% 4%;
+    --foreground: 0 0% 98%;
+    
+    --primary: 217 91% 60%;
+    --primary-foreground: 0 0% 100%;
+    --primary-glow: 217 91% 70%;
+    --primary-dark: 217 91% 50%;
+    
+    --secondary: 270 95% 75%;
+    --secondary-foreground: 0 0% 100%;
+    --secondary-dark: 270 95% 65%;
+    
+    --card: 240 10% 6%;
+    --card-foreground: 0 0% 98%;
+    --card-border: 240 4% 16%;
+    
+    --muted: 240 4% 16%;
+    --muted-foreground: 240 5% 64%;
+    
+    --accent: 240 4% 16%;
+    --accent-foreground: 0 0% 98%;
+    
+    --border: 240 4% 16%;
+    --input: 240 4% 16%;
+    --ring: 217 91% 60%;
+    
+    --popover: 240 10% 6%;
+    --popover-foreground: 0 0% 98%;
+    
+    --sidebar-background: 240 10% 4%;
+    --sidebar-foreground: 240 5% 84%;
+    --sidebar-primary: 217 91% 60%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 4% 16%;
+    --sidebar-accent-foreground: 0 0% 98%;
+    --sidebar-border: 240 4% 16%;
+    --sidebar-ring: 217 91% 60%;
+    
+    --gradient-subtle: linear-gradient(180deg, hsl(240 10% 4%), hsl(240 4% 16%));
+    --gradient-glass: linear-gradient(135deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02));
+    
+    --shadow-glow: 0 0 40px hsl(217 91% 60% / 0.4);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    background: hsl(var(--background));
+  }
+  
+  /* Glass morphism effect */
+  .glass {
+    background: var(--gradient-glass);
+    backdrop-filter: blur(10px);
+    border: 1px solid hsl(var(--border) / 0.2);
+  }
+  
+  /* Smooth transitions */
+  .smooth-transition {
+    transition: var(--transition-smooth);
+  }
+  
+  /* Glow effects */
+  .glow-primary {
+    box-shadow: var(--shadow-glow);
+  }
+}
+
+@layer components {
+  /* Dashboard Cards */
+  .dashboard-card {
+    @apply bg-card rounded-lg border border-card-border p-6 shadow-sm hover:shadow-md smooth-transition;
+  }
+  
+  .dashboard-card-header {
+    @apply flex items-center justify-between mb-4;
+  }
+  
+  .dashboard-card-title {
+    @apply text-sm font-medium text-muted-foreground;
+  }
+  
+  .dashboard-card-value {
+    @apply text-2xl font-bold text-foreground;
+  }
+  
+  /* Status Indicators */
+  .status-success {
+    @apply bg-success/10 text-success border-success/20;
+  }
+  
+  .status-warning {
+    @apply bg-warning/10 text-warning border-warning/20;
+  }
+  
+  .status-destructive {
+    @apply bg-destructive/10 text-destructive border-destructive/20;
+  }
+  
+  /* Interactive Elements */
+  .interactive-card {
+    @apply cursor-pointer hover:scale-[1.02] hover:shadow-lg smooth-transition;
+  }
+  
+  /* Form Styles */
+  .form-section {
+    @apply space-y-6 bg-card p-6 rounded-lg border border-card-border;
+  }
+  
+  /* Navigation Active State */
+  .nav-active {
+    @apply bg-primary text-primary-foreground shadow-sm;
+  }
+  
+  .nav-inactive {
+    @apply text-muted-foreground hover:text-foreground hover:bg-accent;
+  }
+}
