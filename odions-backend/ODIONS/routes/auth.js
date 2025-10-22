@@ -62,35 +62,6 @@ router.post('/signup', async (req, res) => {
   }
 });
 
-// Sign in --------------------------------------------- before Modification -----------------------------------------
-// router.post('/login', async (req, res) => {
-//   // Use same logic as /signin
-//   const { email, password } = req.body;
-
-//   if (!email || !password) {
-//     return res.status(400).json({ 
-//       error: { message: 'Email and password are required', status: 400 } 
-//     });
-//   }
-
-//   const { data, error } = await supabase.auth.signInWithPassword({
-//     email,
-//     password
-//   });
-
-//   if (error) {
-//     return res.status(401).json({ error: { message: error.message, status: 401 } });
-//   }
-
-//   res.status(200).json({
-//     message: 'Login successful',
-//     user: data.user,
-//     session: data.session
-//   });
-// });
-
-// Sign in --------------------------------------------- before Modification ---------------------
-// routes/auth.js
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -123,23 +94,38 @@ router.post('/login', async (req, res) => {
       console.error('Error checking user roles:', rolesError);
     }
 
-    // Insert default role if none exists
-    if (!rolesData || rolesData.length === 0) {
-      const { error: insertRoleError } = await supabaseAdmin
-        .from('user_roles')
-        .insert([{ user_id: userId, role: 'user' }]);
+    // ✅ Ensure user role exists only once
+try {
+  // Query using the admin client (read with service role, not limited by RLS)
+  const { data: existingRoles, error: rolesError } = await supabaseAdmin
+    .from("user_roles")
+    .select("id, role")
+    .eq("user_id", userId)
+    .limit(1);
 
-      if (insertRoleError) {
-        console.error('Error inserting default role with admin key:', insertRoleError);
-      } else {
-        // Reload roles after insertion
-        const { data: newRoles } = await supabase
-          .from('user_roles')
-          .select('*')
-          .eq('user_id', userId);
-        rolesData = newRoles;
-      }
+  if (rolesError) {
+    console.error("Error checking user roles:", rolesError);
+  }
+
+  // Only insert if the user truly has no roles
+  if (!existingRoles || existingRoles.length === 0) {
+    const { error: insertError } = await supabaseAdmin
+      .from("user_roles")
+      .insert([{ user_id: userId, role: "user" }]);
+
+    if (insertError) {
+      console.error("Error inserting default role:", insertError);
+    } else {
+      console.log(`✅ Default role assigned to user ${userId}`);
     }
+  } else {
+    console.log(
+      `ℹ️ User ${userId} already has a role: ${existingRoles[0].role}`
+    );
+  }
+} catch (err) {
+  console.error("Role handling error:", err);
+}
 
     // Respond with user info + roles
     res.status(200).json({

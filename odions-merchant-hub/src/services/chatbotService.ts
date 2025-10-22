@@ -13,7 +13,7 @@ export interface ChannelOptions {
     created_at?: string;
   }
   
-  const API_URL = "http://localhost:5000/api/chatbots";
+  const API_URL = "http://localhost:3000/api/chatbots";
   const TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwidXNlcm5hbWUiOiJUZXN0VXNlciIsImlhdCI6MTc2MDIwMzMzMywiZXhwIjoxNzYwMjA2OTMzfQ.97wQmgmoJIQfm9OEPCv5PH7YW3qtyn5wZkXPloDYV_o"; // Replace or dynamically load from auth context
   
   export const chatbotService = {

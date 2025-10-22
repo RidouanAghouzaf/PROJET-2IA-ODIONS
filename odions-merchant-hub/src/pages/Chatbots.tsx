@@ -7,7 +7,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Globe, Facebook, MessageCircle, Play, Edit, Trash2, Bot } from "lucide-react";
 
-const API_URL = "http://localhost:5000/api/chatbots";
+const API_URL = "http://localhost:3000/api/chatbots";
 const TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwidXNlcm5hbWUiOiJUZXN0VXNlciIsImlhdCI6MTc2MDg5MTM1MCwiZXhwIjoxNzYwODk0OTUwfQ.lQb2-EB-HIcp3A7BmWmvXcdvzmtSfoxkm30lEqtJVuY";
 
 const Chatbots: React.FC = () => {

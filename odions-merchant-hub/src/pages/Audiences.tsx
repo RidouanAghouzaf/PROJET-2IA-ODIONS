@@ -1,442 +1,1008 @@
-import React, { useState } from "react";
+// import { useState } from "react";
+// import { Plus, Eye, Pencil, Trash2 } from "lucide-react";
+// import { Button } from "@/components/ui/button";
+// import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+// import {
+//   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+// } from "@/components/ui/table";
+// import {
+//   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
+// } from "@/components/ui/dialog";
+// import {
+//   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+//   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+// } from "@/components/ui/alert-dialog";
+// import { Input } from "@/components/ui/input";
+// import { Textarea } from "@/components/ui/textarea";
+// import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+// import { Link } from "react-router-dom";
+// import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+// import { useAuth } from "../context/AuthContext";
+// import { Skeleton } from "@/components/ui/skeleton";
+// import { format } from "date-fns";
+// import { useForm } from "react-hook-form";
+// import { zodResolver } from "@hookform/resolvers/zod";
+// import * as z from "zod";
+// import { useToast } from "@/hooks/use-toast";
+// import {
+//   Form, FormControl, FormField, FormItem, FormLabel, FormMessage,
+// } from "@/components/ui/form";
+
+// // Import API_URL from api.ts
+// const API_URL = import.meta.env.VITE_API_URL
+
+// const audienceSchema = z.object({
+//   name: z.string().min(1, "Name is required").max(100),
+//   description: z.string().optional(),
+//   delivery_company: z.string().optional(),
+//   status: z.string().optional(),
+//   limit: z.string().optional(),
+// });
+
+// const Audiences = () => {
+//   const [open, setOpen] = useState(false);
+//   const [editingAudience, setEditingAudience] = useState<any>(null);
+//   const [deleteAudienceId, setDeleteAudienceId] = useState<string | null>(null);
+//   const { session } = useAuth();
+//   const { toast } = useToast();
+//   const queryClient = useQueryClient();
+
+//   const accessToken = session?.access_token;
+
+//   const form = useForm<z.infer<typeof audienceSchema>>({
+//     resolver: zodResolver(audienceSchema),
+//     defaultValues: {
+//       name: "",
+//       description: "",
+//       delivery_company: "",
+//       status: "",
+//       limit: "",
+//     },
+//   });
+
+//   // 🟢 Helper to attach headers with Authorization
+//   const getHeaders = () => ({
+//     "Content-Type": "application/json",
+//     ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+//   });
+
+//   // 🟢 GET all audiences
+//   const { data: audiences = [], isLoading } = useQuery({
+//     queryKey: ["audiences"],
+//     queryFn: async () => {
+//       const res = await fetch(API_URL, { headers: getHeaders() });
+//       if (res.status === 401) throw new Error("Unauthorized. Please log in again.");
+//       if (!res.ok) throw new Error("Failed to fetch audiences");
+//       const json = await res.json();
+//       return json.audiences || [];
+//     },
+//   });
+
+//   // 🟢 CREATE new audience
+//   const createMutation = useMutation({
+//     mutationFn: async (values: z.infer<typeof audienceSchema>) => {
+//       const res = await fetch(API_URL, {
+//         method: "POST",
+//         headers: getHeaders(),
+//         body: JSON.stringify({
+//           name: values.name,
+//           description: values.description || `${values.delivery_company || "Any"} delivery, ${values.status || "any status"}`,
+//           size: parseInt(values.limit || "0"),
+//         }),
+//       });
+//       if (!res.ok) throw new Error("Failed to create audience");
+//       return res.json();
+//     },
+//     onSuccess: () => {
+//       queryClient.invalidateQueries({ queryKey: ["audiences"] });
+//       toast({ title: "Audience created successfully" });
+//       setOpen(false);
+//       form.reset();
+//     },
+//     onError: (err: any) => {
+//       toast({ title: err.message || "Failed to create audience", variant: "destructive" });
+//     },
+//   });
+
+//   // 🟢 UPDATE audience
+//   const updateMutation = useMutation({
+//     mutationFn: async (values: z.infer<typeof audienceSchema>) => {
+//       if (!editingAudience) throw new Error("No audience selected for update");
+
+//       const res = await fetch(`${API_URL}/${editingAudience.id}`, {
+//         method: "PUT",
+//         headers: getHeaders(),
+//         body: JSON.stringify({
+//           name: values.name,
+//           description: values.description || `${values.delivery_company || "Any"} delivery, ${values.status || "any status"}`,
+//           size: parseInt(values.limit || "0"),
+//         }),
+//       });
+
+//       if (!res.ok) {
+//         const errorText = await res.text();
+//         throw new Error(errorText || "Failed to update audience");
+//       }
+
+//       return res.json();
+//     },
+//     onSuccess: () => {
+//       queryClient.invalidateQueries({ queryKey: ["audiences"] });
+//       toast({ title: "Audience updated successfully" });
+//       setEditingAudience(null);
+//       setOpen(false);
+//       form.reset();
+//     },
+//     onError: (err: any) => {
+//       toast({ title: err.message || "Failed to update audience", variant: "destructive" });
+//     },
+//   });
+
+//   // 🟢 DELETE audience
+//   const deleteMutation = useMutation({
+//     mutationFn: async (id: string) => {
+//       const res = await fetch(`${API_URL}/${id}`, {
+//         method: "DELETE",
+//         headers: getHeaders(),
+//       });
+//       if (!res.ok) throw new Error("Failed to delete audience");
+//     },
+//     onSuccess: () => {
+//       queryClient.invalidateQueries({ queryKey: ["audiences"] });
+//       toast({ title: "Audience deleted successfully" });
+//       setDeleteAudienceId(null);
+//     },
+//     onError: (err: any) => {
+//       toast({ title: err.message || "Failed to delete audience", variant: "destructive" });
+//     },
+//   });
+
+//   // 🟢 Form submit (create or update)
+//   const onSubmit = (values: z.infer<typeof audienceSchema>) => {
+//     if (editingAudience) {
+//       updateMutation.mutate(values);
+//     } else {
+//       createMutation.mutate(values);
+//     }
+//   };
+
+//   const handleEdit = (audience: any) => {
+//     setEditingAudience(audience);
+//     form.reset({
+//       name: audience.name,
+//       description: audience.description || "",
+//       delivery_company: "",
+//       status: "",
+//       limit: audience.size?.toString() || "",
+//     });
+//     setOpen(true); // ✅ Open the dialog
+//   };
+
+//   const handleCloseDialog = () => {
+//     setOpen(false);
+//     setEditingAudience(null);
+//     form.reset();
+//   };
+
+//   return (
+//     <div className="space-y-6">
+//       {/* HEADER + CREATE BUTTON */}
+//       <div className="flex items-center justify-between">
+//         <div>
+//           <h1 className="text-3xl font-bold tracking-tight">Audiences</h1>
+//           <p className="text-muted-foreground mt-1">
+//             Create and manage customer segments for targeted campaigns.
+//           </p>
+//         </div>
+
+//         {/* Create Audience Dialog */}
+//         <Dialog open={open} onOpenChange={(isOpen) => {
+//           if (!isOpen) {
+//             handleCloseDialog();
+//           } else {
+//             setOpen(true);
+//           }
+//         }}>
+//           <DialogTrigger asChild>
+//             <Button onClick={() => {
+//               setEditingAudience(null);
+//               form.reset();
+//             }}>
+//               <Plus className="mr-2 h-4 w-4" /> Create Audience
+//             </Button>
+//           </DialogTrigger>
+//           <DialogContent className="max-w-2xl">
+//             <DialogHeader>
+//               <DialogTitle>
+//                 {editingAudience ? "Edit Audience" : "Create New Audience"}
+//               </DialogTitle>
+//             </DialogHeader>
+//             <Form {...form}>
+//               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 py-4">
+//                 <FormField
+//                   control={form.control}
+//                   name="name"
+//                   render={({ field }) => (
+//                     <FormItem>
+//                       <FormLabel>Audience Name</FormLabel>
+//                       <FormControl>
+//                         <Input placeholder="High Value Customers" {...field} />
+//                       </FormControl>
+//                       <FormMessage />
+//                     </FormItem>
+//                   )}
+//                 />
+                
+//                 <FormField
+//                   control={form.control}
+//                   name="description"
+//                   render={({ field }) => (
+//                     <FormItem>
+//                       <FormLabel>Description</FormLabel>
+//                       <FormControl>
+//                         <Textarea 
+//                           placeholder="Describe this audience segment..." 
+//                           className="min-h-[80px]"
+//                           {...field} 
+//                         />
+//                       </FormControl>
+//                       <FormMessage />
+//                     </FormItem>
+//                   )}
+//                 />
+
+//                 <FormField
+//                   control={form.control}
+//                   name="delivery_company"
+//                   render={({ field }) => (
+//                     <FormItem>
+//                       <FormLabel>Delivery Company (Optional)</FormLabel>
+//                       <Select onValueChange={field.onChange} value={field.value}>
+//                         <FormControl>
+//                           <SelectTrigger>
+//                             <SelectValue placeholder="Select delivery company" />
+//                           </SelectTrigger>
+//                         </FormControl>
+//                         <SelectContent>
+//                           <SelectItem value="dhl">DHL</SelectItem>
+//                           <SelectItem value="fedex">FedEx</SelectItem>
+//                           <SelectItem value="ups">UPS</SelectItem>
+//                           <SelectItem value="local">Local Delivery</SelectItem>
+//                         </SelectContent>
+//                       </Select>
+//                       <FormMessage />
+//                     </FormItem>
+//                   )}
+//                 />
+
+//                 <FormField
+//                   control={form.control}
+//                   name="limit"
+//                   render={({ field }) => (
+//                     <FormItem>
+//                       <FormLabel>Size Limit (Optional)</FormLabel>
+//                       <FormControl>
+//                         <Input 
+//                           type="number" 
+//                           placeholder="0" 
+//                           {...field} 
+//                         />
+//                       </FormControl>
+//                       <FormMessage />
+//                     </FormItem>
+//                   )}
+//                 />
+
+//                 <DialogFooter>
+//                   <Button type="button" variant="outline" onClick={handleCloseDialog}>
+//                     Cancel
+//                   </Button>
+//                   <Button type="submit" disabled={createMutation.isPending || updateMutation.isPending}>
+//                     {editingAudience ? "Update Audience" : "Create Audience"}
+//                   </Button>
+//                 </DialogFooter>
+//               </form>
+//             </Form>
+//           </DialogContent>
+//         </Dialog>
+//       </div>
+
+//       {/* Audiences Table */}
+//       <Card>
+//         <CardHeader><CardTitle>All Audiences</CardTitle></CardHeader>
+//         <CardContent>
+//           {isLoading ? (
+//             <div className="space-y-2">
+//               {[1, 2, 3].map((i) => <Skeleton key={i} className="h-12 w-full" />)}
+//             </div>
+//           ) : audiences.length === 0 ? (
+//             <div className="text-center py-10 text-muted-foreground">
+//               No audiences yet. Create your first audience to get started.
+//             </div>
+//           ) : (
+//             <Table>
+//               <TableHeader>
+//                 <TableRow>
+//                   <TableHead>Name</TableHead>
+//                   <TableHead>Description</TableHead>
+//                   <TableHead>Created</TableHead>
+//                   <TableHead className="text-right">Size</TableHead>
+//                   <TableHead className="text-right">Actions</TableHead>
+//                 </TableRow>
+//               </TableHeader>
+//               <TableBody>
+//                 {audiences.map((a: any) => (
+//                   <TableRow key={a.id}>
+//                     <TableCell className="font-medium">{a.name}</TableCell>
+//                     <TableCell className="max-w-md truncate">
+//                       {a.description || "—"}
+//                     </TableCell>
+//                     <TableCell>
+//                       {format(new Date(a.created_at), "MMM dd, yyyy")}
+//                     </TableCell>
+//                     <TableCell className="text-right">{a.size || 0}</TableCell>
+//                     <TableCell className="text-right">
+//                       <div className="flex justify-end gap-2">
+//                         <Button variant="ghost" size="icon" asChild>
+//                           <Link to={`/audiences/${a.id}`}>
+//                             <Eye className="h-4 w-4" />
+//                           </Link>
+//                         </Button>
+//                         <Button 
+//                           variant="ghost" 
+//                           size="icon" 
+//                           onClick={() => handleEdit(a)}
+//                         >
+//                           <Pencil className="h-4 w-4" />
+//                         </Button>
+//                         <Button 
+//                           variant="ghost" 
+//                           size="icon" 
+//                           onClick={() => setDeleteAudienceId(a.id)}
+//                         >
+//                           <Trash2 className="h-4 w-4" />
+//                         </Button>
+//                       </div>
+//                     </TableCell>
+//                   </TableRow>
+//                 ))}
+//               </TableBody>
+//             </Table>
+//           )}
+//         </CardContent>
+//       </Card>
+
+//       {/* Delete Confirmation */}
+//       <AlertDialog 
+//         open={!!deleteAudienceId} 
+//         onOpenChange={(o) => !o && setDeleteAudienceId(null)}
+//       >
+//         <AlertDialogContent>
+//           <AlertDialogHeader>
+//             <AlertDialogTitle>Delete audience?</AlertDialogTitle>
+//             <AlertDialogDescription>
+//               This action cannot be undone. This will permanently delete the audience.
+//             </AlertDialogDescription>
+//           </AlertDialogHeader>
+//           <AlertDialogFooter>
+//             <AlertDialogCancel>Cancel</AlertDialogCancel>
+//             <AlertDialogAction 
+//               onClick={() => deleteAudienceId && deleteMutation.mutate(deleteAudienceId)}
+//             >
+//               Delete
+//             </AlertDialogAction>
+//           </AlertDialogFooter>
+//         </AlertDialogContent>
+//       </AlertDialog>
+//     </div>
+//   );
+// };
+
+// export default Audiences;
+
+import { useState, useEffect } from "react";
+import { Plus, Eye, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
+  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Link } from "react-router-dom";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "../context/AuthContext";
+import { Skeleton } from "@/components/ui/skeleton";
+import { format } from "date-fns";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import * as z from "zod";
+import { useToast } from "@/hooks/use-toast";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Eye, Edit, Trash2, Filter, Plus, Download } from "lucide-react";
+  Form, FormControl, FormField, FormItem, FormLabel, FormMessage,
+} from "@/components/ui/form";
 
-type Audience = {
-  id: string;
-  name: string;
-  deliveryCompany: string;
-  store?: string;
-  orderStatus: string;
-  dateRange: { start: string; end: string };
-  minAmount?: number;
-  maxAmount?: number;
-  numberOfClients?: number | "all";
-  products?: string[];
-  purchaseFrequency?: number;
-  city?: string;
-  region?: string;
-  country?: string;
-  includeRefused?: boolean;
-  topLoyal?: boolean;
-  clientsCount: number;
-  createdAt: string;
-};
+const API_URL = "http://localhost:3000/api/audiences";
 
-export default function Audiences() {
-  const [audiences, setAudiences] = useState<Audience[]>([]);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [viewAudience, setViewAudience] = useState<Audience | null>(null);
+const audienceSchema = z.object({
+  name: z.string().min(1, "Name is required").max(100),
+  criteria_summary: z.string().optional(),
+  delivery_company: z.string().optional(),
+  status: z.string().optional(),
+  limit: z.string().optional(),
+});
 
-  const [formData, setFormData] = useState<Partial<Audience>>({
-    name: "",
-    deliveryCompany: "",
-    store: "",
-    orderStatus: "",
-    dateRange: { start: "", end: "" },
-    minAmount: undefined,
-    maxAmount: undefined,
-    numberOfClients: undefined,
-    products: [],
-    purchaseFrequency: undefined,
-    city: "",
-    region: "",
-    country: "",
-    includeRefused: false,
-    topLoyal: false,
+const Audiences = () => {
+  const [open, setOpen] = useState(false);
+  const [editingAudience, setEditingAudience] = useState<any>(null);
+  const [deleteAudienceId, setDeleteAudienceId] = useState<string | null>(null);
+  const [audiences, setAudiences] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const { session } = useAuth();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const accessToken = session?.access_token;
+
+  const form = useForm<z.infer<typeof audienceSchema>>({
+    resolver: zodResolver(audienceSchema),
+    defaultValues: {
+      name: "",
+      criteria_summary: "",
+      delivery_company: "",
+      status: "",
+      limit: "",
+    },
   });
 
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  // 🟢 Helper to attach headers with Authorization
+  const getHeaders = () => ({
+    "Content-Type": "application/json",
+    ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+  });
 
-  // Handle input
-  const handleInputChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
-  ) => {
-    const { name, value, type, checked } = e.target;
-    if (type === "checkbox") {
-      setFormData({ ...formData, [name]: checked });
+  // 🟢 GET all audiences (no useQuery)
+  useEffect(() => {
+    const fetchAudiences = async () => {
+      try {
+        setIsLoading(true);
+        setError(null);
+
+        const res = await fetch(API_URL, { headers: getHeaders() });
+        if (res.status === 401) throw new Error("Unauthorized. Please log in again.");
+        if (!res.ok) throw new Error("Failed to fetch audiences");
+
+        const json = await res.json();
+        setAudiences(json.audiences || []);
+      } catch (err: any) {
+        setError(err.message);
+        toast({ title: err.message, variant: "destructive" });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchAudiences();
+  }, [accessToken]); // refetch when user logs in/out
+
+  // 🟢 CREATE new audience
+  const createMutation = useMutation({
+    mutationFn: async (values: z.infer<typeof audienceSchema>) => {
+      const res = await fetch(API_URL, {
+        method: "POST",
+        headers: getHeaders(),
+        body: JSON.stringify({
+          name: values.name,
+          criteria_summary:
+            values.criteria_summary ||
+            `${values.delivery_company || "Any"} delivery, ${
+              values.status || "any status"
+            }`,
+          size: parseInt(values.limit || "0"),
+        }),
+      });
+      if (!res.ok) throw new Error("Failed to create audience");
+      return res.json();
+    },
+    onSuccess: async () => {
+      toast({ title: "Audience created successfully" });
+      setOpen(false);
+      form.reset();
+      // refresh list manually
+      const res = await fetch(API_URL, { headers: getHeaders() });
+      const json = await res.json();
+      setAudiences(json.audiences || []);
+    },
+    onError: (err: any) => {
+      toast({
+        title: err.message || "Failed to create audience",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // 🟢 UPDATE audience
+  const updateMutation = useMutation({
+    mutationFn: async (values: z.infer<typeof audienceSchema>) => {
+      if (!editingAudience) throw new Error("No audience selected for update");
+
+      const res = await fetch(`${API_URL}/${editingAudience.id}`, {
+        method: "PUT",
+        headers: getHeaders(),
+        body: JSON.stringify({
+          name: values.name,
+          criteria_summary:
+            values.criteria_summary ||
+            `${values.delivery_company || "Any"} delivery, ${
+              values.status || "any status"
+            }`,
+          size: parseInt(values.limit || "0"),
+        }),
+      });
+
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(errorText || "Failed to update audience");
+      }
+
+      return res.json();
+    },
+    onSuccess: async () => {
+      toast({ title: "Audience updated successfully" });
+      setEditingAudience(null);
+      setOpen(false);
+      form.reset();
+      // refresh list manually
+      const res = await fetch(API_URL, { headers: getHeaders() });
+      const json = await res.json();
+      setAudiences(json.audiences || []);
+    },
+    onError: (err: any) => {
+      toast({
+        title: err.message || "Failed to update audience",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // 🟢 DELETE audience
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`${API_URL}/${id}`, {
+        method: "DELETE",
+        headers: getHeaders(),
+      });
+      if (!res.ok) throw new Error("Failed to delete audience");
+    },
+    onSuccess: async () => {
+      toast({ title: "Audience deleted successfully" });
+      setDeleteAudienceId(null);
+      // refresh list manually
+      const res = await fetch(API_URL, { headers: getHeaders() });
+      const json = await res.json();
+      setAudiences(json.audiences || []);
+    },
+    onError: (err: any) => {
+      toast({ title: err.message || "Failed to delete audience", variant: "destructive" });
+    },
+  });
+
+  // 🟢 Form submit (create or update)
+  const onSubmit = (values: z.infer<typeof audienceSchema>) => {
+    if (editingAudience) {
+      updateMutation.mutate(values);
     } else {
-      setFormData({ ...formData, [name]: value });
+      createMutation.mutate(values);
     }
   };
 
-  // Validate form
-  const validateForm = () => {
-    const newErrors: Record<string, string> = {};
-    if (!formData.name) newErrors.name = "Audience name is required";
-    if (!formData.deliveryCompany) newErrors.deliveryCompany = "Delivery company is required";
-    if (!formData.orderStatus) newErrors.orderStatus = "Order status is required";
-    if (!formData.dateRange?.start || !formData.dateRange?.end)
-      newErrors.dateRange = "Date range is required";
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+  const handleEdit = (audience: any) => {
+    setEditingAudience(audience);
+    form.reset({
+      name: audience.name,
+      criteria_summary: audience.criteria_summary || "",
+      delivery_company: "",
+      status: "",
+      limit: audience.size?.toString() || "",
+    });
+    setOpen(true);
   };
 
-  // Save Audience
-  const handleSaveAudience = () => {
-    if (validateForm()) {
-      const newAudience: Audience = {
-        id: `AUD-${(audiences.length + 1).toString().padStart(3, "0")}`,
-        name: formData.name!,
-        deliveryCompany: formData.deliveryCompany!,
-        store: formData.store,
-        orderStatus: formData.orderStatus!,
-        dateRange: formData.dateRange!,
-        minAmount: formData.minAmount,
-        maxAmount: formData.maxAmount,
-        numberOfClients: formData.numberOfClients,
-        products: formData.products,
-        purchaseFrequency: formData.purchaseFrequency,
-        city: formData.city,
-        region: formData.region,
-        country: formData.country,
-        includeRefused: formData.includeRefused,
-        topLoyal: formData.topLoyal,
-        clientsCount: Math.floor(Math.random() * 100), // mock
-        createdAt: new Date().toISOString(),
-      };
-      setAudiences([...audiences, newAudience]);
-      setIsDialogOpen(false);
-      setFormData({});
-      setErrors({});
-    }
+  const handleCloseDialog = () => {
+    setOpen(false);
+    setEditingAudience(null);
+    form.reset();
   };
-
-  // Filter audiences
-  const filteredAudiences = audiences.filter(
-    (aud) =>
-      aud.name.toLowerCase().includes(searchTerm.toLowerCase()) &&
-      (statusFilter === "all" || aud.orderStatus === statusFilter)
-  );
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      {/* Header */}
+    <div className="space-y-6">
+      {/* HEADER + CREATE BUTTON */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-foreground">Audiences Management</h1>
-          <p className="text-muted-foreground">
-            Create and manage customer audiences
+          <h1 className="text-3xl font-bold tracking-tight">Audiences</h1>
+          <p className="text-muted-foreground mt-1">
+            Create and manage customer segments for targeted campaigns.
           </p>
         </div>
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+
+        {/* Create Audience Dialog */}
+        <Dialog
+          open={open}
+          onOpenChange={(isOpen) => {
+            if (!isOpen) handleCloseDialog();
+            else setOpen(true);
+          }}
+        >
           <DialogTrigger asChild>
-            <Button className="bg-gradient-primary hover:opacity-90">
-              <Plus className="h-4 w-4 mr-2" />
-              Create Audience
+            <Button
+              onClick={() => {
+                setEditingAudience(null);
+                form.reset();
+              }}
+            >
+              <Plus className="mr-2 h-4 w-4" /> Create Audience
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-2xl rounded-xl shadow-2xl p-6 bg-white max-h-[80vh] overflow-y-auto">
+          <DialogContent className="max-w-2xl">
             <DialogHeader>
-              <DialogTitle className="text-2xl font-bold text-gray-800">
-                Create New Audience
+              <DialogTitle>
+                {editingAudience ? "Edit Audience" : "Create New Audience"}
               </DialogTitle>
-              <DialogDescription className="text-gray-500">
-                Define all required criteria for this audience.
-              </DialogDescription>
             </DialogHeader>
-
-            {/* Form */}
-            <div className="space-y-4">
-              <Input
-                placeholder="Audience Name"
-                name="name"
-                value={formData.name || ""}
-                onChange={handleInputChange}
-              />
-              {errors.name && <p className="text-red-500 text-sm">{errors.name}</p>}
-
-              <select
-                name="deliveryCompany"
-                value={formData.deliveryCompany || ""}
-                onChange={handleInputChange}
-                className="border rounded-md p-2 w-full"
+            <Form {...form}>
+              <form
+                onSubmit={form.handleSubmit(onSubmit)}
+                className="space-y-4 py-4"
               >
-                <option value="">Select Delivery Company</option>
-                <option value="Ameex">Ameex</option>
-                <option value="Onesta">Onesta</option>
-                <option value="Ozon Express">Ozon Express</option>
-                <option value="Digilog">Digilog</option>
-              </select>
-              {errors.deliveryCompany && <p className="text-red-500 text-sm">{errors.deliveryCompany}</p>}
-
-              <Input
-                placeholder="Store (optional)"
-                name="store"
-                value={formData.store || ""}
-                onChange={handleInputChange}
-              />
-
-              <select
-                name="orderStatus"
-                value={formData.orderStatus || ""}
-                onChange={handleInputChange}
-                className="border rounded-md p-2 w-full"
-              >
-                <option value="">Select Order Status</option>
-                <option value="delivered">Delivered</option>
-                <option value="refused">Refused</option>
-                <option value="pending">Pending</option>
-                <option value="returned">Returned</option>
-              </select>
-              {errors.orderStatus && <p className="text-red-500 text-sm">{errors.orderStatus}</p>}
-
-              <div className="flex gap-2">
-                <Input
-                  type="date"
-                  name="dateRange.start"
-                  placeholder="Start Date"
-                  value={formData.dateRange?.start || ""}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    dateRange: { ...formData.dateRange!, start: e.target.value }
-                  })}
+                <FormField
+                  control={form.control}
+                  name="name"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Audience Name</FormLabel>
+                      <FormControl>
+                        <Input placeholder="High Value Customers" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
                 />
-                <Input
-                  type="date"
-                  name="dateRange.end"
-                  placeholder="End Date"
-                  value={formData.dateRange?.end || ""}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    dateRange: { ...formData.dateRange!, end: e.target.value }
-                  })}
-                />
-              </div>
-              {errors.dateRange && <p className="text-red-500 text-sm">{errors.dateRange}</p>}
 
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Min Amount"
-                  name="minAmount"
-                  type="number"
-                  value={formData.minAmount || ""}
-                  onChange={handleInputChange}
+                <FormField
+                  control={form.control}
+                  name="criteria_summary"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Description</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          placeholder="Describe this audience segment..."
+                          className="min-h-[80px]"
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
                 />
-                <Input
-                  placeholder="Max Amount"
-                  name="maxAmount"
-                  type="number"
-                  value={formData.maxAmount || ""}
-                  onChange={handleInputChange}
+
+                <FormField
+                  control={form.control}
+                  name="delivery_company"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Delivery Company (Optional)</FormLabel>
+                      <Select
+                        onValueChange={field.onChange}
+                        value={field.value}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select delivery company" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="dhl">DHL</SelectItem>
+                          <SelectItem value="fedex">FedEx</SelectItem>
+                          <SelectItem value="ups">UPS</SelectItem>
+                          <SelectItem value="local">Local Delivery</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
                 />
-              </div>
 
-              <Input
-                placeholder="Number of Clients (all, 50, 100, etc.)"
-                name="numberOfClients"
-                value={formData.numberOfClients?.toString() || ""}
-                onChange={handleInputChange}
-              />
-              <Input
-                placeholder="Products (comma separated)"
-                name="products"
-                value={formData.products?.join(",") || ""}
-                onChange={(e) =>
-                  setFormData({ ...formData, products: e.target.value.split(",") })
-                }
-              />
-              <Input
-                placeholder="Purchase Frequency"
-                name="purchaseFrequency"
-                type="number"
-                value={formData.purchaseFrequency || ""}
-                onChange={handleInputChange}
-              />
-              <Input
-                placeholder="City"
-                name="city"
-                value={formData.city || ""}
-                onChange={handleInputChange}
-              />
-              <Input
-                placeholder="Region"
-                name="region"
-                value={formData.region || ""}
-                onChange={handleInputChange}
-              />
-              <Input
-                placeholder="Country"
-                name="country"
-                value={formData.country || ""}
-                onChange={handleInputChange}
-              />
-              <div className="flex gap-4 items-center">
-                <label>
-                  <input
-                    type="checkbox"
-                    name="includeRefused"
-                    checked={formData.includeRefused || false}
-                    onChange={handleInputChange}
-                  /> Include Refused Orders
-                </label>
-                <label>
-                  <input
-                    type="checkbox"
-                    name="topLoyal"
-                    checked={formData.topLoyal || false}
-                    onChange={handleInputChange}
-                  /> Top Loyal Customers
-                </label>
-              </div>
-            </div>
+                <FormField
+                  control={form.control}
+                  name="limit"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Size Limit (Optional)</FormLabel>
+                      <FormControl>
+                        <Input type="number" placeholder="0" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-            <DialogFooter className="flex justify-end mt-6 border-t pt-4 gap-3">
-              <Button variant="outline" onClick={() => setIsDialogOpen(false)} className="px-6">
-                Cancel
-              </Button>
-              <Button
-                onClick={handleSaveAudience}
-                className="bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white px-6"
-              >
-                Save Audience
-              </Button>
-            </DialogFooter>
+                <DialogFooter>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleCloseDialog}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={
+                      createMutation.isPending || updateMutation.isPending
+                    }
+                  >
+                    {editingAudience ? "Update Audience" : "Create Audience"}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </Form>
           </DialogContent>
         </Dialog>
       </div>
 
-      {/* Filters */}
-      <div className="flex gap-2">
-        <Input
-          placeholder="Search Audience..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-        />
-        <select
-          className="border rounded-md p-2"
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-        >
-          <option value="all">All Statuses</option>
-          <option value="delivered">Delivered</option>
-          <option value="refused">Refused</option>
-          <option value="pending">Pending</option>
-          <option value="returned">Returned</option>
-        </select>
-        <Button variant="outline" size="sm">
-          <Filter className="h-4 w-4 mr-2" /> Filter
-        </Button>
-      </div>
-
-      {/* Table */}
+      {/* Audiences Table */}
       <Card>
         <CardHeader>
-          <CardTitle>Audience List</CardTitle>
-          <CardDescription>
-            List of all customer audiences
-          </CardDescription>
+          <CardTitle>All Audiences</CardTitle>
         </CardHeader>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Delivery Company</TableHead>
-                <TableHead>Clients Count</TableHead>
-                <TableHead>Created At</TableHead>
-                <TableHead>Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredAudiences.map((aud) => (
-                <TableRow key={aud.id}>
-                  <TableCell>{aud.name}</TableCell>
-                  <TableCell>{aud.deliveryCompany}</TableCell>
-                  <TableCell>{aud.clientsCount}</TableCell>
-                  <TableCell>{new Date(aud.createdAt).toLocaleDateString()}</TableCell>
-                  <TableCell>
-                    <div className="flex gap-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setViewAudience(aud)}
-                      >
-                        <Eye className="h-4 w-4" />
-                      </Button>
-                      <Button variant="ghost" size="sm">
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                      <Button variant="ghost" size="sm">
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                      <Button variant="ghost" size="sm">
-                        <Download className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
+        <CardContent>
+          {isLoading ? (
+            <div className="space-y-2">
+              {[1, 2, 3].map((i) => (
+                <Skeleton key={i} className="h-12 w-full" />
               ))}
-            </TableBody>
-          </Table>
+            </div>
+          ) : error ? (
+            <div className="text-red-500 text-center py-10">{error}</div>
+          ) : audiences.length === 0 ? (
+            <div className="text-center py-10 text-muted-foreground">
+              No audiences yet. Create your first audience to get started.
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Description</TableHead>
+                  <TableHead>Created</TableHead>
+                  <TableHead className="text-right">Size</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {audiences.map((a: any) => (
+                  <TableRow key={a.id}>
+                    <TableCell className="font-medium">{a.name}</TableCell>
+                    <TableCell className="max-w-md truncate">
+                      {a.criteria_summary || "—"}
+                    </TableCell>
+                    <TableCell>
+                      {format(new Date(a.created_at), "MMM dd, yyyy")}
+                    </TableCell>
+                    <TableCell className="text-right">{a.size || 0}</TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-2">
+                        <Button variant="ghost" size="icon" asChild>
+                          <Link to={`/audiences/${a.id}`}>
+                            <Eye className="h-4 w-4" />
+                          </Link>
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleEdit(a)}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setDeleteAudienceId(a.id)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
 
-      {/* View Audience Modal */}
-      <Dialog open={!!viewAudience} onOpenChange={() => setViewAudience(null)}>
-        <DialogContent className="sm:max-w-3xl rounded-xl shadow-2xl p-6 bg-white max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="text-2xl font-bold text-gray-800">
-              {viewAudience?.name}
-            </DialogTitle>
-            <DialogDescription className="text-gray-500">
-              Audience Details
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2">
-            <p>
-              <strong>Delivery Company:</strong> {viewAudience?.deliveryCompany}
-            </p>
-            <p>
-              <strong>Order Status:</strong> {viewAudience?.orderStatus}
-            </p>
-            <p>
-              <strong>Clients Count:</strong> {viewAudience?.clientsCount}
-            </p>
-            <p>
-              <strong>Date Range:</strong> {viewAudience?.dateRange.start} - {viewAudience?.dateRange.end}
-            </p>
-          </div>
-          <DialogFooter className="flex justify-end mt-6 border-t pt-4">
-            <Button variant="outline" onClick={() => setViewAudience(null)}>
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Delete Confirmation */}
+      <AlertDialog
+        open={!!deleteAudienceId}
+        onOpenChange={(o) => !o && setDeleteAudienceId(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete audience?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. This will permanently delete the
+              audience.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() =>
+                deleteAudienceId && deleteMutation.mutate(deleteAudienceId)
+              }
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
-}
+};
+
+export default Audiences;
+
+// import React, { useState, useEffect, useRef } from "react";
+// import Papa from "papaparse";
+// import { Card, CardContent } from "@/components/ui/card";
+// import { Button } from "@/components/ui/button";
+// import { useAuth } from "../context/AuthContext";
+// import { Loader2, Upload } from "lucide-react";
+
+// const API_URL = "http://localhost:3000/api/audiences";
+
+// export default function Audiences() {
+//   const { session } = useAuth(); // ✅ use your session
+//   const accessToken = session?.access_token;
+
+//   const [audiences, setAudiences] = useState<any[]>([]);
+//   const [loading, setLoading] = useState<boolean>(false);
+//   const [importing, setImporting] = useState<boolean>(false);
+//   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+//   const getHeaders = () => ({
+//     "Content-Type": "application/json",
+//     ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+//   });
+
+//   const fetchAudiences = async () => {
+//     setLoading(true);
+//     try {
+//       const res = await fetch(API_URL, { headers: getHeaders() });
+//       if (!res.ok) throw new Error("Failed to fetch audiences");
+//       const json = await res.json();
+//       setAudiences(json.audiences || []);
+//     } catch (err) {
+//       console.error("Fetch audiences error:", err);
+//     } finally {
+//       setLoading(false);
+//     }
+//   };
+
+//   useEffect(() => {
+//     if (accessToken) fetchAudiences(); // fetch only if logged in
+//   }, [accessToken]);
+
+//   const handleImportCSV = async (e: React.ChangeEvent<HTMLInputElement>) => {
+//     const file = e.target.files?.[0];
+//     if (!file) return;
+
+//     setImporting(true);
+
+//     Papa.parse(file, {
+//       header: true,
+//       skipEmptyLines: true,
+//       complete: async (results) => {
+//         const rows = results.data as any[];
+
+//         for (const row of rows) {
+//           const audience = {
+//             name: row.name || "Unnamed Audience",
+//             description: row.criteria_summary || "",
+//             size: parseInt(row.size) || 0,
+//           };
+
+//           try {
+//             const res = await fetch(API_URL, {
+//               method: "POST",
+//               headers: getHeaders(),
+//               body: JSON.stringify(audience),
+//             });
+//             if (!res.ok) {
+//               const error = await res.json();
+//               console.error("Error adding audience:", error);
+//             }
+//           } catch (err) {
+//             console.error("CSV import error:", err);
+//           }
+//         }
+
+//         await fetchAudiences();
+//         setImporting(false);
+//         if (fileInputRef.current) fileInputRef.current.value = "";
+//       },
+//     });
+//   };
+
+//   const triggerFileInput = () => {
+//     fileInputRef.current?.click();
+//   };
+
+//   return (
+//     <div className="p-6">
+//       <div className="flex justify-between items-center mb-4">
+//         <h1 className="text-xl font-bold">Audiences</h1>
+//         <Button onClick={triggerFileInput} disabled={importing}>
+//           {importing ? (
+//             <>
+//               <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Importing...
+//             </>
+//           ) : (
+//             <>
+//               <Upload className="w-4 h-4 mr-2" /> Import CSV
+//             </>
+//           )}
+//         </Button>
+//         <input
+//           type="file"
+//           accept=".csv"
+//           ref={fileInputRef}
+//           onChange={handleImportCSV}
+//           className="hidden"
+//         />
+//       </div>
+
+//       <Card>
+//         <CardContent>
+//           {loading ? (
+//             <p>Loading audiences...</p>
+//           ) : audiences.length > 0 ? (
+//             <table className="min-w-full border">
+//               <thead>
+//                 <tr className="bg-gray-100">
+//                   <th className="text-left p-2 border">Name</th>
+//                   <th className="text-left p-2 border">Criteria Summary</th>
+//                   <th className="text-left p-2 border">Size</th>
+//                   <th className="text-left p-2 border">Created At</th>
+//                 </tr>
+//               </thead>
+//               <tbody>
+//                 {audiences.map((a) => (
+//                   <tr key={a.id} className="hover:bg-gray-50">
+//                     <td className="p-2 border">{a.name}</td>
+//                     <td className="p-2 border">{a.criteria_summary}</td>
+//                     <td className="p-2 border">{a.size}</td>
+//                     <td className="p-2 border">
+//                       {new Date(a.created_at).toLocaleString()}
+//                     </td>
+//                   </tr>
+//                 ))}
+//               </tbody>
+//             </table>
+//           ) : (
+//             <p>No audiences found.</p>
+//           )}
+//         </CardContent>
+//       </Card>
+//     </div>
+//   );
+// }
