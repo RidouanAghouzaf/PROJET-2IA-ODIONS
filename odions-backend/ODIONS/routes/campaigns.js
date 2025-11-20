@@ -6,7 +6,7 @@ const axios = require("axios");
 // Meta WhatsApp Business API Configuration
 const WHATSAPP_CONFIG = {
   PHONE_NUMBER_ID: "826017757269126",
-  ACCESS_TOKEN: "",
+  ACCESS_TOKEN: process.env.WHATSAPP_ACCESS_TOKEN,
   API_URL: "https://graph.facebook.com/v22.0"
 };
 
