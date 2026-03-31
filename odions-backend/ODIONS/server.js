@@ -19,6 +19,7 @@ const audienceRoutes = require('./routes/audiences');
 const chatbotRoutes = require('./routes/chatbots');
 const storeRoutes = require('./routes/stores');
 const analyticsRoutes = require('./routes/analytics');
+const whatsappRoutes = require('./routes/whatsapp');
 
 const app = express();
 
@@ -43,7 +44,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use('/api', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/tenants', tenantRoutes);
-app.use('/api/delivery-companies', deliveryRoutes);
+app.use('/api/delivery_companies', deliveryRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/campaigns', campaignRoutes);
@@ -51,6 +52,7 @@ app.use('/api/audiences', audienceRoutes);
 app.use('/api/chatbots', chatbotRoutes);
 app.use('/api/stores', storeRoutes);
 app.use('/api/analytics', analyticsRoutes);
+app.use('/api/whatsapp', whatsappRoutes);
 
 // ======================= HEALTH CHECK =====================
 app.get('/health', (req, res) => {
