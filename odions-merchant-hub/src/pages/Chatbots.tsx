@@ -1,430 +1,299 @@
-import React, { useState, useEffect } from "react";
-import { Card, CardContent } from "@/components/ui/card";
+"use client";
+
+import React, { useEffect, useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
+import { Textarea } from "@/components/ui/textarea"; // ✅ Fixed import
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Globe, Facebook, MessageCircle, Play, Edit, Trash2, Bot } from "lucide-react";
+import { toast } from "sonner";
+import { Loader2, Plus, Trash2, Edit3, Send, Play } from "lucide-react";
+import axios from "axios";
 
-const API_URL = "http://localhost:3000/api/chatbots";
-const TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwidXNlcm5hbWUiOiJUZXN0VXNlciIsImlhdCI6MTc2MDg5MTM1MCwiZXhwIjoxNzYwODk0OTUwfQ.lQb2-EB-HIcp3A7BmWmvXcdvzmtSfoxkm30lEqtJVuY";
+// ====================== WhatsApp Function ======================
+const handleSendWhatsApp = (message: string, userPhone: string) => {
+  const encodedMessage = encodeURIComponent(message);
+  const phone = userPhone.replace(/\D/g, "");
+  const url = `https://wa.me/${phone}?text=${encodedMessage}`;
+  window.open(url, "_blank");
+  toast.success("WhatsApp ouvert ✅");
+};
 
-const Chatbots: React.FC = () => {
-  // ======================= STATES =======================
-  const [botName, setBotName] = useState("");
-  const [welcomeMessage, setWelcomeMessage] = useState("");
-  const [scenarios, setScenarios] = useState([{ question: "", answer: "" }]);
-  const [channels, setChannels] = useState({ whatsapp: false, website: false, facebook: false });
-  const [isActive, setIsActive] = useState(true);
-  const [testMessage, setTestMessage] = useState("");
-  const [testResponse, setTestResponse] = useState("");
-  const [interactions, setInteractions] = useState<
-    { id: number; user: string; message: string; response: string }[]
-  >([]);
-  const [sessions, setSessions] = useState<any[]>([]);
-  const [activeSessionId, setActiveSessionId] = useState<number | null>(null);
-  const [chatbots, setChatbots] = useState<any[]>([]);
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [selectedChatbotId, setSelectedChatbotId] = useState<number | null>(null);
-
-  // ======================= LOAD CHATBOTS =======================
-  const loadChatbots = async () => {
-    try {
-      const res = await fetch(API_URL, {
-        headers: { Authorization: `Bearer ${TOKEN}` },
-      });
-      const data = await res.json();
-      setChatbots(data.chatbots || []);
-      if (data.chatbots?.length > 0 && selectedChatbotId === null) {
-        setSelectedChatbotId(data.chatbots[0].id);
-      }
-    } catch (error) {
-      console.error("Erreur chargement chatbots:", error);
-    }
-  };
-
-  // ======================= LOAD SESSIONS FOR SELECTED CHATBOT =======================
-  useEffect(() => {
-    if (!selectedChatbotId) {
-      setSessions([]);
-      setActiveSessionId(null);
-      return;
-    }
-
-    fetch(`${API_URL}/${selectedChatbotId}/sessions`, {
-      headers: { Authorization: `Bearer ${TOKEN}` },
-    })
-      .then((res) => res.json())
-      .then((data) => {
-        setSessions(data.sessions || []);
-        setActiveSessionId(data.sessions?.[0]?.id || null);
-        setInteractions([]); // Reset interactions when chatbot/session changes
-      })
-      .catch((err) => console.error("Erreur chargement sessions:", err));
-  }, [selectedChatbotId]);
-
-  // ======================= SCENARIOS =======================
-  const handleScenarioChange = (index: number, field: string, value: string) => {
+// ====================== ScenarioList ======================
+function ScenarioList({ scenarios, setScenarios }: any) {
+  const handleChange = (index: number, field: string, value: string) => {
     const newScenarios = [...scenarios];
-    newScenarios[index] = { ...newScenarios[index], [field]: value };
+    (newScenarios[index] as any)[field] = value;
     setScenarios(newScenarios);
   };
+
   const addScenario = () => setScenarios([...scenarios, { question: "", answer: "" }]);
+  const removeScenario = (index: number) =>
+    setScenarios(scenarios.filter((_, i) => i !== index));
 
-  // ======================= CREATE OR UPDATE CHATBOT =======================
-  const handleSaveChatbot = async () => {
-    if (!botName.trim()) {
-      alert("Veuillez saisir un nom pour le chatbot !");
-      return;
-    }
+  return (
+    <div>
+      <h3 className="font-semibold mb-2">Scénarios</h3>
+      {scenarios.map((s: any, i: number) => (
+        <div key={i} className="flex items-center gap-2 mb-2">
+          <Input
+            placeholder="Question"
+            value={s.question}
+            onChange={(e) => handleChange(i, "question", e.target.value)}
+          />
+          <Input
+            placeholder="Réponse"
+            value={s.answer}
+            onChange={(e) => handleChange(i, "answer", e.target.value)}
+          />
+          <Button variant="destructive" size="icon" onClick={() => removeScenario(i)}>
+            <Trash2 size={16} />
+          </Button>
+        </div>
+      ))}
+      <Button onClick={addScenario}>
+        <Plus className="mr-2 h-4 w-4" /> Ajouter un scénario
+      </Button>
+    </div>
+  );
+}
 
-    const chatbotData = {
-      bot_name: botName,
-      welcome_message: welcomeMessage,
-      scenarios,
-      channels,
-      is_active: isActive,
-    };
+// ====================== ChatbotForm ======================
+function ChatbotForm({ bot, onSave }: any) {
+  const [botName, setBotName] = useState(bot?.bot_name || "");
+  const [welcomeMessage, setWelcomeMessage] = useState(bot?.welcome_message || "");
+  const [scenarios, setScenarios] = useState(bot?.scenarios || [{ question: "", answer: "" }]);
+  const [channels, setChannels] = useState(bot?.channels || { whatsapp: false, website: false, facebook: false });
+  const [isActive, setIsActive] = useState(bot?.is_active ?? true);
+  const [loading, setLoading] = useState(false);
 
+  const handleSave = async () => {
+    if (!botName) return toast.error("Le nom du chatbot est requis");
+    setLoading(true);
+
+    const data = { bot_name: botName, welcome_message: welcomeMessage, channels, is_active: isActive, scenarios, user_id: 1 };
+    await onSave(data);
+    setLoading(false);
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{bot ? "Modifier le Chatbot" : "Créer un nouveau Chatbot"}</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <Input placeholder="Nom du chatbot" value={botName} onChange={(e) => setBotName(e.target.value)} />
+        <Textarea placeholder="Message de bienvenue" value={welcomeMessage} onChange={(e) => setWelcomeMessage(e.target.value)} />
+
+        {/* Channels */}
+        <div className="space-y-2 mt-2">
+          <h3 className="font-semibold">Canaux</h3>
+          <div className="flex gap-4">
+            {["whatsapp", "facebook", "website"].map((ch: string) => (
+              <label key={ch} className="flex items-center gap-2">
+                <Switch
+                  checked={channels[ch as keyof typeof channels]}
+                  onCheckedChange={(v) => setChannels({ ...channels, [ch]: v })}
+                />
+                {ch.charAt(0).toUpperCase() + ch.slice(1)}
+              </label>
+            ))}
+          </div>
+        </div>
+
+        {/* Active */}
+        <div className="flex items-center gap-4 mt-2">
+          <label>Activer le chatbot :</label>
+          <Switch checked={isActive} onCheckedChange={setIsActive} />
+        </div>
+
+        {/* Scenarios */}
+        <ScenarioList scenarios={scenarios} setScenarios={setScenarios} />
+
+        <Button onClick={handleSave} disabled={loading}>
+          {loading ? <Loader2 className="animate-spin" /> : "Enregistrer"}
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ====================== ChatbotCard ======================
+function ChatbotCard({ bot, onEdit, onDelete, onTest }: any) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{bot.bot_name}</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p>{bot.welcome_message}</p>
+        <div className="flex gap-2">
+          <Button onClick={() => onEdit(bot)}>
+            <Edit3 size={16} className="mr-2" /> Modifier
+          </Button>
+          <Button variant="outline" onClick={() => onTest(bot.id)}>
+            <Play size={16} className="mr-2" /> Tester
+          </Button>
+          <Button variant="destructive" onClick={() => onDelete(bot.id)}>
+            <Trash2 size={16} />
+          </Button>
+        </div>
+
+        {/* Channels Display */}
+        <div className="mt-2 flex gap-2 text-sm">
+          {bot.channels?.whatsapp && <span className="bg-green-100 px-2 rounded">WhatsApp</span>}
+          {bot.channels?.facebook && <span className="bg-blue-100 px-2 rounded">Facebook</span>}
+          {bot.channels?.website && <span className="bg-gray-100 px-2 rounded">Web</span>}
+        </div>
+
+        {/* WhatsApp Button */}
+        {bot.channels?.whatsapp && (
+          <Button
+            variant="outline"
+            onClick={() => handleSendWhatsApp(bot.welcome_message, "+212624093004")}
+          >
+            <Send className="mr-2 h-4 w-4" /> Envoyer WhatsApp
+          </Button>
+        )}
+
+        <div className="mt-1 text-sm">{bot.is_active ? "Actif ✅" : "Inactif ❌"}</div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ====================== MAIN COMPONENT ======================
+export default function Chatbots() {
+  const [chatbots, setChatbots] = useState<any[]>([]);
+  const [editingBot, setEditingBot] = useState<any | null>(null);
+  const [activeTab, setActiveTab] = useState("list");
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [testMessage, setTestMessage] = useState("");
+  const [interactions, setInteractions] = useState<any[]>([]);
+  const topRef = useRef<HTMLDivElement | null>(null);
+
+  const API_URL = "http://localhost:3000/api/chatbots";
+
+  useEffect(() => {
+    fetchChatbots();
+  }, []);
+
+  const fetchChatbots = async () => {
     try {
-      const url = editingId ? `${API_URL}/${editingId}` : API_URL;
-      const method = editingId ? "PUT" : "POST";
-
-      const res = await fetch(url, {
-        method,
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${TOKEN}`,
-        },
-        body: JSON.stringify(chatbotData),
-      });
-
-      const data = await res.json();
-      if (res.ok) {
-        alert(editingId ? "Chatbot mis à jour !" : "Chatbot créé !");
-        await loadChatbots();
-        resetForm();
-      } else {
-        alert("Erreur: " + data.message);
-      }
+      const res = await axios.get(API_URL);
+      setChatbots(res.data);
     } catch (error) {
-      console.error("❌ Erreur création/màj chatbot:", error);
+      console.error(error);
     }
   };
 
-  // ======================= DELETE CHATBOT =======================
-  const handleDeleteChatbot = async (id: number) => {
-    if (!confirm("Voulez-vous vraiment supprimer ce chatbot ?")) return;
+  const handleSave = async (data: any) => {
     try {
-      const res = await fetch(`${API_URL}/${id}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${TOKEN}` },
-      });
-      if (res.ok) {
-        setChatbots(chatbots.filter((b) => b.id !== id));
-        alert("Chatbot supprimé !");
-        if (selectedChatbotId === id) {
-          setSelectedChatbotId(null);
-          setSessions([]);
-          setActiveSessionId(null);
-        }
+      if (editingBot) {
+        await axios.put(`${API_URL}/${editingBot.id}`, data);
+        toast.success("Chatbot mis à jour !");
       } else {
-        alert("Erreur suppression !");
+        await axios.post(API_URL, data);
+        toast.success("Chatbot créé !");
       }
+      setEditingBot(null);
+      setActiveTab("list");
+      fetchChatbots();
     } catch (error) {
-      console.error("Erreur suppression:", error);
+      console.error(error);
+      toast.error("Erreur lors de l’enregistrement");
     }
   };
 
-  // ======================= EDIT CHATBOT =======================
-  const handleEditChatbot = (bot: any) => {
-    setBotName(bot.bot_name);
-    setWelcomeMessage(bot.welcome_message);
-    setScenarios(bot.scenarios || [{ question: "", answer: "" }]);
-    setChannels(bot.channels || { whatsapp: false, website: false, facebook: false });
-    setIsActive(bot.is_active);
-    setEditingId(bot.id);
-    setSelectedChatbotId(bot.id);
-  };
-
-  // ======================= RESET FORM =======================
-  const resetForm = () => {
-    setBotName("");
-    setWelcomeMessage("");
-    setScenarios([{ question: "", answer: "" }]);
-    setChannels({ whatsapp: false, website: false, facebook: false });
-    setIsActive(true);
-    setEditingId(null);
-  };
-
-  const handleSaveSession = async () => {
-    if (!selectedChatbotId) {
-      alert("Veuillez sélectionner un chatbot avant de créer une session !");
-      return;
-    }
-  
-    const url = `${API_URL}/${selectedChatbotId}/sessions`;
-    console.log("📤 Creating session with URL:", url);
-  
+  const handleDelete = async (id: number) => {
+    if (!confirm("Supprimer ce chatbot ?")) return;
     try {
-      const res = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${TOKEN}`,
-        },
-        body: JSON.stringify({}), // Supabase doesn't need anything in body
-      });
-  
-      const data = await res.json();
-      console.log("✅ Session creation response:", data);
-  
-      if (res.ok) {
-        setSessions([data.session, ...sessions]);
-        setActiveSessionId(data.session.id);
-        setInteractions([]);
-        alert("Session créée !");
-      } else {
-        alert("Erreur création session: " + (data.error?.message || "Erreur inconnue"));
-      }
+      await axios.delete(`${API_URL}/${id}`);
+      toast.success("Chatbot supprimé");
+      fetchChatbots();
     } catch (error) {
-      console.error("❌ Erreur lors de la création de session:", error);
-      alert("Erreur réseau ou serveur !");
+      console.error(error);
+      toast.error("Erreur lors de la suppression");
     }
   };
-  
 
-  // ======================= TEST BOT =======================
+  const handleEdit = (bot: any) => {
+    setEditingBot(bot);
+    setActiveTab("config");
+    setTimeout(() => topRef.current?.scrollIntoView({ behavior: "smooth" }), 200);
+  };
+
+  const handleStartTest = async (botId: number) => {
+    try {
+      const res = await axios.post(`${API_URL}/${botId}/sessions`);
+      const sessionId = res.data.session.id;
+      setActiveSessionId(sessionId);
+      setInteractions([]);
+      setActiveTab("test");
+      toast.success("Session de test créée !");
+    } catch (error) {
+      console.error(error);
+      toast.error("Impossible de créer la session de test");
+    }
+  };
+
   const handleTestBot = async () => {
-    if (!selectedChatbotId || !activeSessionId) {
-      alert("Aucune session active ou chatbot sélectionné !");
-      return;
-    }
-  
-    const url = `${API_URL}/${selectedChatbotId}/sessions/${activeSessionId}/messages`;
-    console.log("🧪 Sending test message to:", url);
-  
+    if (!activeSessionId || !testMessage.trim()) return toast.error("Message requis !");
     try {
-      const res = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${TOKEN}`
-        },
-        body: JSON.stringify({ message: testMessage, role: "user" })
-      });
-  
-      const data = await res.json();
-      console.log("🤖 Bot reply:", data);
-  
-      const matchedScenario = scenarios.find((s) => s.question === testMessage);
-      const simulatedResponse = matchedScenario ? matchedScenario.answer : "Réponse automatique";
-  
-      setTestResponse(simulatedResponse);
-      setInteractions([
-        ...interactions,
-        { id: interactions.length + 1, user: "Test", message: testMessage, response: simulatedResponse }
-      ]);
+      const res = await axios.post(`${API_URL}/sessions/${activeSessionId}/messages`, { message: testMessage, role: "user" });
+      setInteractions((prev) => [...prev, { user: "Vous", message: testMessage, response: res.data.botReply || "Pas de réponse." }]);
       setTestMessage("");
     } catch (error) {
-      console.error("❌ Erreur en testant le bot:", error);
-      alert("Erreur réseau ou serveur !");
+      console.error(error);
+      toast.error("Erreur lors du test");
     }
   };
-  
 
-  // ======================= RENDER =======================
   return (
-    <div className="p-6 space-y-6">
-      <h1 className="text-2xl font-bold flex items-center gap-2">
-        <Bot className="w-6 h-6 text-primary" /> Gestion des Chatbots
-      </h1>
+    <div ref={topRef} className="p-6 space-y-6">
+      <h1 className="text-2xl font-bold">🤖 Gestion des Chatbots</h1>
 
-      <Tabs defaultValue="config" className="space-y-6">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
         <TabsList>
-          <TabsTrigger value="config">Configurer</TabsTrigger>
-          <TabsTrigger value="channels">Canaux</TabsTrigger>
-          <TabsTrigger value="test">Tester</TabsTrigger>
-          <TabsTrigger value="history">Historique</TabsTrigger>
           <TabsTrigger value="list">Liste</TabsTrigger>
+          <TabsTrigger value="config">Configurer</TabsTrigger>
+          <TabsTrigger value="test">Tester</TabsTrigger>
         </TabsList>
 
-        {/* ===== CONFIGURATION ===== */}
         <TabsContent value="config">
-          <Card className="p-4 shadow-md">
-            <CardContent className="space-y-4">
-              <Input placeholder="Nom du chatbot" value={botName} onChange={(e) => setBotName(e.target.value)} />
-              <Textarea
-                placeholder="Message de bienvenue"
-                value={welcomeMessage}
-                onChange={(e) => setWelcomeMessage(e.target.value)}
-              />
-
-              <div className="space-y-3">
-                <h3 className="font-medium">Scénarios de conversation</h3>
-                {scenarios.map((s, idx) => (
-                  <div key={idx} className="flex gap-2">
-                    <Input
-                      placeholder="Question"
-                      value={s.question}
-                      onChange={(e) => handleScenarioChange(idx, "question", e.target.value)}
-                    />
-                    <Input
-                      placeholder="Réponse"
-                      value={s.answer}
-                      onChange={(e) => handleScenarioChange(idx, "answer", e.target.value)}
-                    />
-                  </div>
-                ))}
-                <Button variant="outline" onClick={addScenario}>
-                  ➕ Ajouter un scénario
-                </Button>
-              </div>
-
-              <div className="flex items-center gap-2 mt-4">
-                <Switch checked={isActive} onCheckedChange={setIsActive} />
-                <span className="text-sm">{isActive ? "Bot Actif" : "Bot Inactif"}</span>
-              </div>
-
-              <Button className="w-full mt-4" onClick={handleSaveChatbot}>
-                {editingId ? "💾 Mettre à jour le Chatbot" : "➕ Créer le Chatbot"}
-              </Button>
-            </CardContent>
-          </Card>
+          <ChatbotForm bot={editingBot} onSave={handleSave} />
         </TabsContent>
 
-        {/* ===== CANAUX ===== */}
-        <TabsContent value="channels">
-          <Card className="p-4 shadow-md">
-            <CardContent className="space-y-4">
-              <label className="flex items-center gap-2">
-                <Switch checked={channels.whatsapp} onCheckedChange={(v) => setChannels({ ...channels, whatsapp: v })} />
-                <MessageCircle className="h-4 w-4" /> WhatsApp
-              </label>
-              <label className="flex items-center gap-2">
-                <Switch checked={channels.website} onCheckedChange={(v) => setChannels({ ...channels, website: v })} />
-                <Globe className="h-4 w-4" /> Site Web
-              </label>
-              <label className="flex items-center gap-2">
-                <Switch checked={channels.facebook} onCheckedChange={(v) => setChannels({ ...channels, facebook: v })} />
-                <Facebook className="h-4 w-4" /> Facebook Messenger
-              </label>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* ===== TEST ===== */}
-        <TabsContent value="test">
-          <Card className="p-4 shadow-md">
-            <CardContent className="space-y-4">
-              {!selectedChatbotId ? (
-                <p className="text-red-600">Veuillez sélectionner un chatbot dans l'onglet Liste.</p>
-              ) : !activeSessionId ? (
-                <p className="text-red-600">Veuillez créer ou sélectionner une session dans l'historique.</p>
-              ) : (
-                <>
-                  <div className="flex gap-2">
-                    <Input
-                      placeholder="Tapez un message..."
-                      value={testMessage}
-                      onChange={(e) => setTestMessage(e.target.value)}
-                    />
-                    <Button variant="outline" onClick={handleTestBot}>
-                      <Play className="h-4 w-4" /> Tester
-                    </Button>
-                  </div>
-                  {testResponse && <p className="text-sm text-muted-foreground mt-2">🤖 {testResponse}</p>}
-                </>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* ===== HISTORIQUE ===== */}
-        <TabsContent value="history">
-          <Card className="p-4 shadow-md">
-            <CardContent>
-              <h3 className="mb-2 font-semibold">Sessions pour le chatbot sélectionné</h3>
-              {!selectedChatbotId ? (
-                <p>Veuillez sélectionner un chatbot dans l'onglet Liste.</p>
-              ) : sessions.length === 0 ? (
-                <p>Aucune session trouvée.</p>
-              ) : (
-                <ul className="space-y-2 max-h-48 overflow-y-auto">
-                  {sessions.map((session) => (
-                    <li
-                      key={session.id}
-                      className={`p-2 rounded cursor-pointer ${
-                        activeSessionId === session.id ? "bg-blue-400 text-white" : "hover:bg-gray-200"
-                      }`}
-                      onClick={() => {
-                        setActiveSessionId(session.id);
-                        setInteractions([]); // Clear chat interactions when switching session
-                      }}
-                    >
-                      Session #{session.id} — Créée le {new Date(session.created_at).toLocaleString()}
-                    </li>
-                  ))}
-                </ul>
-              )}
-              <Button onClick={handleSaveSession} className="mt-4 w-full">
-                + Créer une nouvelle session
-              </Button>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* ===== LISTE ===== */}
         <TabsContent value="list">
-          <Card className="p-4 shadow-md">
-            <CardContent className="space-y-4 max-h-[400px] overflow-y-auto">
-              {chatbots.length === 0 ? (
-                <p>Aucun chatbot trouvé.</p>
-              ) : (
-                chatbots.map((bot) => (
-                  <div
-                    key={bot.id}
-                    className={`flex justify-between items-center border p-3 rounded-lg hover:bg-gray-50 transition cursor-pointer
-                      ${selectedChatbotId === bot.id ? "bg-blue-100" : ""}
-                    `}
-                    onClick={() => setSelectedChatbotId(bot.id)}
-                  >
-                    <div className="flex flex-col">
-                      <p className="font-semibold">{bot.bot_name}</p>
-                      <p className="text-sm text-muted-foreground">ID: {bot.id}</p>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {chatbots.map((bot) => (
+              <ChatbotCard key={bot.id} bot={bot} onEdit={handleEdit} onDelete={handleDelete} onTest={handleStartTest} />
+            ))}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="test">
+          <Card>
+            <CardHeader>
+              <CardTitle>🧪 Tester le Chatbot</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Input placeholder="Entrez un message..." value={testMessage} onChange={(e) => setTestMessage(e.target.value)} />
+              <Button onClick={handleTestBot}><Send className="mr-2 h-4 w-4" /> Envoyer</Button>
+              <div className="mt-4 border rounded-md p-4 bg-gray-50 max-h-80 overflow-auto">
+                {interactions.length === 0 ? <p>Aucune interaction pour le moment.</p> :
+                  interactions.map((i, idx) => (
+                    <div key={idx} className="mb-3">
+                      <p className="font-semibold text-blue-600">{i.user}: {i.message}</p>
+                      <p className="text-gray-700 ml-4">🤖 {i.response}</p>
                     </div>
-                    <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleEditChatbot(bot);
-                        }}
-                      >
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteChatbot(bot.id);
-                        }}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-                ))
-              )}
+                  ))}
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
       </Tabs>
     </div>
   );
-};
-
-export default Chatbots;
+}

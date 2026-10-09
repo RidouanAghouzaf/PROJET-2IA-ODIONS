@@ -1,108 +1,102 @@
 const express = require("express");
+const crypto = require("crypto");
 const router = express.Router();
-const axios = require("axios");
 const { supabase } = require("../config/supabase");
+const { sendWhatsAppMessage } = require("../services/whatsappService");
+const { scheduleReportRefresh } = require("../services/campaignReport");
 
-const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
-const PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_ID;
-const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
+const RANK = { pending: 0, sent: 1, delivered: 2, read: 3 };
 
-// ✅ Vérification du webhook WhatsApp (obligatoire par Meta)
+// Meta verification handshake
 router.get("/webhook", (req, res) => {
-  const mode = req.query["hub.mode"];
-  const token = req.query["hub.verify_token"];
-  const challenge = req.query["hub.challenge"];
-
-  if (mode && token === VERIFY_TOKEN) {
+  if (req.query["hub.mode"] === "subscribe" && req.query["hub.verify_token"] === process.env.VERIFY_TOKEN) {
     console.log("✅ Webhook WhatsApp vérifié");
-    res.status(200).send(challenge);
-  } else {
-    res.sendStatus(403);
+    return res.status(200).send(req.query["hub.challenge"]);
   }
+  res.sendStatus(403);
 });
 
-// ✅ Réception des messages WhatsApp
-router.post("/webhook", async (req, res) => {
-  try {
-    const entry = req.body.entry?.[0];
-    const changes = entry?.changes?.[0];
-    const message = changes?.value?.messages?.[0];
-
-    if (message) {
-      const from = message.from; // Numéro de l'utilisateur
-      const text = message.text?.body?.trim().toLowerCase();
-
-      console.log(`💬 Message reçu de ${from}: ${text}`);
-
-      // 1️⃣ Récupérer un chatbot actif avec canal WhatsApp activé
-      const { data: chatbots, error } = await supabase
-        .from("chatbots")
-        .select("*")
-        .eq("is_active", true);
-
-      if (error) throw error;
-
-      const whatsappBot = chatbots.find(
-        (b) => b.channels?.whatsapp === true
-      );
-
-      if (!whatsappBot) {
-        console.log("⚠️ Aucun chatbot WhatsApp actif trouvé.");
-        await sendMessage(from, "Aucun chatbot WhatsApp n’est actuellement actif.");
-        return res.sendStatus(200);
-      }
-
-      // 2️⃣ Chercher la réponse dans les scénarios
-      const scenarios = whatsappBot.scenarios || [];
-      const matched = scenarios.find((s) =>
-        text.includes(s.question.toLowerCase())
-      );
-
-      // 3️⃣ Répondre
-      if (matched) {
-        await sendMessage(from, matched.answer);
-      } else {
-        await sendMessage(from, whatsappBot.welcome_message || "Je n’ai pas compris, pouvez-vous reformuler ?");
-      }
-    }
-
-    res.sendStatus(200);
-  } catch (err) {
-    console.error("❌ Erreur Webhook WhatsApp:", err.message);
-    res.sendStatus(500);
+// Only enforced once WHATSAPP_APP_SECRET is set. Requires in server.js:
+//   app.use(express.json({ verify: (req, _res, buf) => { req.rawBody = buf; } }));
+function signatureOk(req) {
+  const secret = process.env.WHATSAPP_APP_SECRET;
+  if (!secret) return true;
+  if (!req.rawBody) {
+    console.error("[WEBHOOK] WHATSAPP_APP_SECRET is set but req.rawBody is missing: add the verify hook in server.js");
+    return false;
   }
-});
-
-// ✅ Route d’envoi manuel (pour tester depuis React)
-router.post("/send", async (req, res) => {
-  const { to, message } = req.body;
-  try {
-    await sendMessage(to, message);
-    res.json({ success: true });
-  } catch (error) {
-    console.error("Erreur envoi WhatsApp:", error.message);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// ✅ Fonction pour envoyer un message
-async function sendMessage(to, message) {
-  await axios.post(
-    `https://graph.facebook.com/v21.0/${PHONE_NUMBER_ID}/messages`,
-    {
-      messaging_product: "whatsapp",
-      to,
-      type: "text",
-      text: { body: message },
-    },
-    {
-      headers: {
-        Authorization: `Bearer ${WHATSAPP_TOKEN}`,
-        "Content-Type": "application/json",
-      },
-    }
-  );
-  console.log(`📤 Réponse envoyée à ${to}: ${message}`);
+  const expected = "sha256=" + crypto.createHmac("sha256", secret).update(req.rawBody).digest("hex");
+  const got = req.get("x-hub-signature-256") || "";
+  return got.length === expected.length && crypto.timingSafeEqual(Buffer.from(got), Buffer.from(expected));
 }
 
+router.post("/webhook", async (req, res) => {
+  if (!signatureOk(req)) return res.sendStatus(401);
+  res.sendStatus(200); // acknowledge first: Meta retries on slow or non-200 responses
+
+  for (const entry of req.body?.entry ?? []) {
+    for (const change of entry?.changes ?? []) {
+      const value = change?.value;
+      if (!value) continue;
+      for (const s of value.statuses ?? []) {
+        try { await handleStatus(s); } catch (e) { console.error("[WEBHOOK] status error", e.message); }
+      }
+      for (const m of value.messages ?? []) {
+        try { await handleInboundMessage(m); } catch (e) { console.error("[WEBHOOK] message error", e.message); }
+      }
+      for (const e of value.errors ?? []) console.error("[WEBHOOK] error event", e);
+    }
+  }
+});
+
+// Delivery tracking: maps Meta's message id back to the campaign recipient
+async function handleStatus(s) {
+  const { data: row, error } = await supabase.from("campaign_recipients")
+    .select("id,status,campaign_id").eq("wa_message_id", s.id).maybeSingle();
+  if (error) return console.error("[WEBHOOK] lookup failed", error.message);
+  if (!row) return; // not a campaign message (or the wamid isn't saved yet)
+
+  const ts = s.timestamp ? new Date(Number(s.timestamp) * 1000).toISOString() : new Date().toISOString();
+  const patch = {};
+  if (s.status === "failed") {
+    if ((RANK[row.status] ?? 0) >= RANK.delivered) return;
+    const er = s.errors?.[0] || {};
+    Object.assign(patch, { status: "failed", error_code: String(er.code ?? ""), error_message: er.title || er.message || "Delivery failed" });
+  } else if ((RANK[s.status] ?? -1) > (RANK[row.status] ?? -1)) { // events can arrive out of order
+    patch.status = s.status;
+    if (s.status === "delivered") patch.delivered_at = ts;
+    if (s.status === "read") { patch.read_at = ts; patch.delivered_at = ts; }
+  }
+  if (!Object.keys(patch).length) return;
+
+  const { error: upErr } = await supabase.from("campaign_recipients").update(patch).eq("id", row.id);
+  if (upErr) return console.error("[WEBHOOK] update failed", upErr.message);
+  console.log("[WEBHOOK] status", { wamid: s.id, status: s.status, campaignId: row.campaign_id });
+  scheduleReportRefresh(row.campaign_id); // keeps campaigns.report (what the UI reads) current
+}
+
+const reply = async (to, body) => {
+  const r = await sendWhatsAppMessage(to, body, { forceText: true }); // in-window reply: plain text, never a template
+  if (!r.success) console.error("[WEBHOOK] reply failed", r.code, r.error);
+};
+
+// Your existing chatbot logic, now guarded (non-text messages no longer crash it)
+async function handleInboundMessage(m) {
+  if (m.type !== "text") return;
+  const from = m.from;
+  const text = m.text?.body?.trim().toLowerCase();
+  if (!from || !text) return;
+  console.log(`💬 Message reçu de ${from}`);
+
+  const { data: chatbots, error } = await supabase.from("chatbots").select("*").eq("is_active", true);
+  if (error) throw error;
+
+  const bot = (chatbots || []).find((b) => b.channels?.whatsapp === true);
+  if (!bot) return reply(from, "Aucun chatbot WhatsApp n’est actuellement actif.");
+
+  const matched = (bot.scenarios || []).find((s) => s.question?.trim() && text.includes(s.question.toLowerCase()));
+  await reply(from, matched ? matched.answer : (bot.welcome_message || "Je n’ai pas compris, pouvez-vous reformuler ?"));
+}
+
+// POST /send removed: it was an unauthenticated open relay and your React code never calls it.
 module.exports = router;
