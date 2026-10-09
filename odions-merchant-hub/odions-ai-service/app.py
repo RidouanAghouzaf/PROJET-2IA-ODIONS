@@ -286,31 +286,61 @@ def prediction(req: PredictionRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# from fastapi import HTTPException
+from transformers import pipeline
+
+# Load HuggingFace sentiment model once (not inside the function!)
+sentiment_model = pipeline(
+    "sentiment-analysis",
+    model="distilbert-base-uncased-finetuned-sst-2-english"
+)
+
 @app.post("/api/ai/sentiment")
 def sentiment(req: SentimentRequest):
     try:
         results = []
+
+        # --- CASE 1: req.messages ---
         if req.messages:
             for m in req.messages:
-                s = analyzer.polarity_scores(m)
-                results.append({"text": m, "score": s})
+                out = sentiment_model(m)[0]
+                results.append({
+                    "text": m,
+                    "label": out["label"],
+                    "score": float(out["score"])
+                })
+
+        # --- CASE 2: req.client_message_pairs ---
         if req.client_message_pairs:
             for pair in req.client_message_pairs:
                 text = pair.get("text", "")
                 client_id = pair.get("client_id")
-                s = analyzer.polarity_scores(text)
-                results.append({"client_id": client_id, "text": text, "score": s})
+                out = sentiment_model(text)[0]
+                results.append({
+                    "client_id": client_id,
+                    "text": text,
+                    "label": out["label"],
+                    "score": float(out["score"])
+                })
+
+        # --- CASE 3: Load from DB if no input sent ---
         if not req.messages and not req.client_message_pairs:
             df = messages_df[messages_df["tenant_id"] == req.tenant_id] if not messages_df.empty else pd.DataFrame()
+
             for _, row in df.iterrows():
-                s = analyzer.polarity_scores(str(row.get("content", "")))
-                results.append(
-                    {"client_id": int(row.get("client_id")), "text": row.get("content"), "score": s}
-                )
+                text = str(row.get("content", ""))
+                out = sentiment_model(text)[0]
+                results.append({
+                    "client_id": int(row.get("client_id")),
+                    "text": text,
+                    "label": out["label"],
+                    "score": float(out["score"])
+                })
+
         return {"sentiments": results, "count": len(results)}
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @app.post("/api/ai/clv")
 def get_clv():
@@ -368,3 +398,49 @@ def get_recommendations():
         return {"recommendations": recommendations}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+# whatsapp
+
+
+from fastapi import FastAPI
+from pydantic import BaseModel
+import requests
+import os
+
+app = FastAPI()
+
+WHATSAPP_TOKEN = "YOUR_WHATSAPP_CLOUD_API_TOKEN"
+PHONE_ID = "YOUR_PHONE_NUMBER_ID"
+
+class WhatsAppMessage(BaseModel):
+    to: str  # User phone number in international format
+    message: str
+
+@app.post("/api/send-whatsapp")
+def send_whatsapp(msg: WhatsAppMessage):
+    url = f"https://graph.facebook.com/v17.0/{PHONE_ID}/messages"
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": msg.to,
+        "text": {"body": msg.message}
+    }
+    headers = {"Authorization": f"Bearer {WHATSAPP_TOKEN}"}
+    res = requests.post(url, json=payload, headers=headers)
+    return res.json()
+@app.post("/webhook")
+def whatsapp_webhook(data: dict):
+    incoming = data["entry"][0]["changes"][0]["value"]
+    from_number = incoming["messages"][0]["from"]
+    text = incoming["messages"][0]["text"]["body"]
+    
+    # Match scenario
+    reply = "Pas de réponse."  # default
+    for scenario in SCENARIOS:
+        if scenario["question"].lower() in text.lower():
+            reply = scenario["answer"]
+            break
+    
+    # Send reply
+    requests.post(f"https://graph.facebook.com/v17.0/{PHONE_ID}/messages",
+                  json={"messaging_product": "whatsapp", "to": from_number, "text": {"body": reply}},
+                  headers={"Authorization": f"Bearer {WHATSAPP_TOKEN}"})
+    return {"status": "ok"}

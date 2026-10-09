@@ -1,154 +1,129 @@
-const jwt = require('jsonwebtoken');
-require('dotenv').config();
-const { supabase, supabaseAdmin  } = require('../config/supabase'); // ✅ import Supabase client
+const { supabase, supabaseAdmin } = require('../config/supabase');
 
-// Authenticate JWT token using Supabase
+// ─── Authenticate JWT (unchanged logic, keep as-is) ─────────────────────────
 const authenticateToken = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
-    const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+    const token = authHeader && authHeader.split(' ')[1];
 
     if (!token) {
-      return res.status(401).json({
-        error: { message: 'Access token required', status: 401 }
-      });
+      return res.status(401).json({ error: { message: 'Access token required', status: 401 } });
     }
 
-    // ✅ Verify token with Supabase
     const { data: { user }, error } = await supabase.auth.getUser(token);
 
     if (error || !user) {
-      return res.status(401).json({
-        error: { message: 'Invalid or expired token', status: 401 }
-      });
+      return res.status(401).json({ error: { message: 'Invalid or expired token', status: 401 } });
     }
 
-    // Attach user to request
     req.user = user;
     next();
   } catch (error) {
     console.error('Auth middleware error:', error);
-    res.status(401).json({
-      error: { message: 'Authentication failed', status: 401 }
-    });
+    res.status(401).json({ error: { message: 'Authentication failed', status: 401 } });
   }
 };
 
-// Require admin role
-// const requireAdmin = async (req, res, next) => {
-//   try {
-//     console.log('Checking admin for user:', req.user?.id);
+// ─── Shared helper: fetch roles for current user ─────────────────────────────
+const getUserRoles = async (userId) => {
+  const { data, error } = await supabaseAdmin
+    .from('user_roles')
+    .select('role, tenant_id')
+    .eq('user_id', userId);
 
-//     if (!req.user || !req.user.id) {
-//       return res.status(401).json({
-//         error: { message: 'User not authenticated', status: 401 }
-//       });
-//     }
+  if (error) throw new Error(`DB error fetching roles: ${error.message}`);
+  return data || [];
+};
 
-//     // ✅ Fetch user role
-//     const { data: userRole, error } = await supabase
-//       .from('user_roles')
-//       .select('role')
-//       .eq('user_id', req.user.id)
-//       .maybeSingle()
-
-//     console.log('User role check:', { 
-//       userId: req.user.id, 
-//       role: userRole?.role, 
-//       error 
-//     });
-
-//     if (error) {
-//       console.error('Database error:', error);
-//       return res.status(500).json({
-//         error: { message: `Database error: ${error.message}`, status: 500 }
-//       });
-//     }
-
-//     if (!userRole) {
-//       return res.status(404).json({
-//         error: { message: 'User role not found', status: 404 }
-//       });
-//     }
-
-//     if (userRole.role !== 'admin') {
-//       return res.status(403).json({
-//         error: { message: 'Admin access required', status: 403 }
-//       });
-//     }
-
-//     req.userRole = userRole.role;
-//     next();
-//   } catch (error) {
-//     console.error('requireAdmin error:', error);
-//     res.status(500).json({
-//       error: { message: `Authorization check failed: ${error.message}`, status: 500 }
-//     });
-//   }
-// };
-
-// const requireAdmin = async (req, res, next) => {
-//   try {
-//     // Fetch user's roles from user_roles
-//     const { data, error } = await supabase
-//       .from('users')
-//       .select('id, user_roles(role)')
-//       .eq('id', req.user.id)
-//       .single();
-
-//     if (error) {
-//       console.error('Admin check DB error:', error);
-//       return res.status(500).json({ error: { message: 'Internal server error', status: 500 } });
-//     }
-
-//     const roles = data?.user_roles?.map(r => r.role) || [];
-
-//     console.log('User role check:', { userId: req.user.id, roles });
-
-//     if (!roles.includes('admin')) {
-//       return res.status(403).json({ error: { message: 'Forbidden', status: 403 } });
-//     }
-
-//     req.user.roles = roles; // attach roles for downstream use
-//     next();
-//   } catch (err) {
-//     console.error('Admin check error:', err);
-//     res.status(500).json({ error: { message: 'Internal server error', status: 500 } });
-//   }
-// };
-
-async function requireAdmin(req, res, next) {
+// ─── Attach roles to req.user (use BEFORE any role check) ───────────────────
+// Usage: router.get('/...', authenticateToken, attachRoles, requireRole(...))
+const attachRoles = async (req, res, next) => {
   try {
-    const userId = req.user.id;
+    const rolesData = await getUserRoles(req.user.id);
+    req.user.roles     = rolesData.map(r => r.role);
+    req.user.tenant_id = rolesData[0]?.tenant_id || null; // primary tenant
+    next();
+  } catch (err) {
+    console.error('attachRoles error:', err);
+    res.status(500).json({ error: { message: 'Failed to load user roles', status: 500 } });
+  }
+};
 
-    console.log('Checking admin for user:', userId);
-
-    // Use supabaseAdmin to bypass RLS
-    const { data: rolesData, error } = await supabaseAdmin
-      .from('user_roles')
-      .select('*')
-      .eq('user_id', userId);
-
-    if (error) {
-      console.error('Admin check DB error:', error);
-      return res.status(500).json({ error: { message: 'Database error', status: 500 } });
+// ─── Generic role guard factory ──────────────────────────────────────────────
+// Usage: requireRole('super_admin')
+//        requireRole('tenant_admin', 'super_admin')   // allow either
+const requireRole = (...allowedRoles) => async (req, res, next) => {
+  try {
+    // attachRoles may have already populated this; if not, fetch now
+    if (!req.user.roles) {
+      const rolesData = await getUserRoles(req.user.id);
+      req.user.roles     = rolesData.map(r => r.role);
+      req.user.tenant_id = rolesData[0]?.tenant_id || null;
     }
 
-    const roles = rolesData?.map(r => r.role) || [];
-    console.log('User role check:', { userId, roles });
+    const hasRole = req.user.roles.some(r => allowedRoles.includes(r));
 
-    if (!roles.includes('admin')) {
-      return res.status(403).json({ error: { message: 'Forbidden', status: 403 } });
+    if (!hasRole) {
+      return res.status(403).json({
+        error: {
+          message: `Access denied. Required role: ${allowedRoles.join(' or ')}`,
+          status: 403
+        }
+      });
     }
 
     next();
   } catch (err) {
-    console.error('Admin check error:', err);
-    res.status(500).json({ error: { message: 'Internal server error', status: 500 } });
+    console.error('requireRole error:', err);
+    res.status(500).json({ error: { message: 'Authorization check failed', status: 500 } });
   }
-}
+};
+
+// ─── Convenience guards (pre-composed) ──────────────────────────────────────
+// Super admin only
+const requireSuperAdmin = requireRole('super_admin');
+
+// Tenant admin or super admin (super admin can manage any tenant)
+const requireTenantAdmin = requireRole('tenant_admin', 'super_admin');
+
+// Any authenticated tenant member (admin or user)
+const requireTenantMember = requireRole('tenant_admin', 'tenant_user', 'super_admin');
+
+// ─── Tenant isolation guard ───────────────────────────────────────────────────
+// Ensures tenant_admin/tenant_user can only access their own tenant's data.
+// Super admin bypasses this check.
+// Usage: router.get('/:tenantId/...', authenticateToken, attachRoles, requireTenantAccess)
+const requireTenantAccess = (req, res, next) => {
+  const { roles, tenant_id } = req.user;
+
+  // Super admin can access any tenant
+  if (roles.includes('super_admin')) return next();
+
+  const requestedTenantId = req.params.tenantId || req.body.tenant_id;
+
+  if (!requestedTenantId) {
+    return res.status(400).json({ error: { message: 'tenant_id is required', status: 400 } });
+  }
+
+  if (String(tenant_id) !== String(requestedTenantId)) {
+    return res.status(403).json({
+      error: { message: 'Access denied: wrong tenant', status: 403 }
+    });
+  }
+
+  next();
+};
+
+// Keep legacy requireAdmin for backward compatibility
+const requireAdmin = requireRole('super_admin');
 
 module.exports = {
   authenticateToken,
-  requireAdmin
+  attachRoles,
+  requireRole,
+  requireSuperAdmin,
+  requireTenantAdmin,
+  requireTenantMember,
+  requireTenantAccess,
+  requireAdmin, // legacy alias
 };

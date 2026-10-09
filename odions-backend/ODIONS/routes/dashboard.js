@@ -1,202 +1,274 @@
-// routes/dashboard.js
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const { supabase } = require('../config/supabase');
-const { authenticateToken } = require('../middleware/auth');
+const { supabase } = require("../config/supabase");
+const requireAuth = require("../middleware/requireAuth");
+const { resolveRange, eachDay, RANGE_KEYS } = require("../utils/dateRanges");
 
-// Get dashboard statistics
-router.get('/stats', authenticateToken, async (req, res) => {
+// Every route below runs only for a verified Supabase session.
+// req.tenantId comes from the token, never from the request body or query string.
+router.use(requireAuth);
+
+// Change a name here if your column differs.
+const COL = {
+  orders:    { table: "orders",    tenant: "user_id" },
+  campaigns: { table: "campaigns", tenant: "user_id" },
+  audiences: { table: "audiences", tenant: "user_id" },
+  chatbots:  { table: "chatbots",  tenant: "user_id" },
+};
+
+const num = (v) => Number(v) || 0;
+const iso = (ms) => new Date(ms).toISOString();
+const pct = (a, b) => (b > 0 ? (a / b) * 100 : null);
+const DAY_FMT = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Casablanca" }); // YYYY-MM-DD
+const PAGE = 1000;
+const MAX_ROWS = 50000; // safety cap per period
+
+const wrap = (fn) => async (req, res) => {
   try {
-    const now = new Date();
-    const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const currentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-
-    // Get orders data
-    const { data: orders, error: ordersError } = await supabase
-      .from('orders')
-      .select('status, total, created_at');
-
-    if (ordersError) throw ordersError;
-
-    // Calculate current month stats
-    const currentMonthOrders = orders.filter(o => 
-      new Date(o.created_at) >= currentMonth
-    );
-    const lastMonthOrders = orders.filter(o => 
-      new Date(o.created_at) >= lastMonth && new Date(o.created_at) < currentMonth
-    );
-
-    // Total Orders
-    const totalOrders = currentMonthOrders.length;
-    const lastMonthTotalOrders = lastMonthOrders.length;
-    const ordersChange = lastMonthTotalOrders > 0 
-      ? ((totalOrders - lastMonthTotalOrders) / lastMonthTotalOrders * 100).toFixed(1)
-      : 0;
-
-    // Refused Orders
-    const refusedOrders = currentMonthOrders.filter(o => 
-      o.status === 'cancelled' || o.status === 'refused'
-    ).length;
-    const lastMonthRefusedOrders = lastMonthOrders.filter(o => 
-      o.status === 'cancelled' || o.status === 'refused'
-    ).length;
-    const refusedChange = lastMonthRefusedOrders > 0 
-      ? ((refusedOrders - lastMonthRefusedOrders) / lastMonthRefusedOrders * 100).toFixed(1)
-      : 0;
-
-    // Revenue
-    const revenue = currentMonthOrders.reduce((sum, o) => 
-      sum + (parseFloat(o.total) || 0), 0
-    );
-    const lastMonthRevenue = lastMonthOrders.reduce((sum, o) => 
-      sum + (parseFloat(o.total) || 0), 0
-    );
-    const revenueChange = lastMonthRevenue > 0 
-      ? ((revenue - lastMonthRevenue) / lastMonthRevenue * 100).toFixed(1)
-      : 0;
-
-    // Active Customers
-    const { data: users, error: usersError } = await supabase
-      .from('users')
-      .select('created_at')
-      .eq('role', 'user');
-
-    if (usersError) throw usersError;
-
-    const activeCustomers = users.filter(u => 
-      new Date(u.created_at) >= currentMonth
-    ).length;
-    const lastMonthActiveCustomers = users.filter(u => 
-      new Date(u.created_at) >= lastMonth && new Date(u.created_at) < currentMonth
-    ).length;
-    const customersChange = lastMonthActiveCustomers > 0 
-      ? ((activeCustomers - lastMonthActiveCustomers) / lastMonthActiveCustomers * 100).toFixed(1)
-      : 0;
-
-    // Get campaigns data
-    const { data: campaigns, error: campaignsError } = await supabase
-      .from('campaigns')
-      .select('created_at')
-      .gte('created_at', currentMonth.toISOString());
-
-    const campaignsSent = campaigns ? campaigns.length : 0;
-    const lastMonthCampaigns = campaigns ? campaigns.filter(c => 
-      new Date(c.created_at) < currentMonth
-    ).length : 0;
-    const campaignsChange = lastMonthCampaigns > 0 
-      ? ((campaignsSent - lastMonthCampaigns) / lastMonthCampaigns * 100).toFixed(1)
-      : 0;
-
-    // Chatbot sessions (mock data - replace with real data)
-    const chatbotSessions = 892;
-    const chatbotChange = 25.6;
-
-    // Conversion rate
-    const deliveredOrders = currentMonthOrders.filter(o => o.status === 'delivered').length;
-    const conversionRate = totalOrders > 0 
-      ? ((deliveredOrders / totalOrders) * 100).toFixed(1)
-      : 0;
-    const lastMonthDeliveredOrders = lastMonthOrders.filter(o => o.status === 'delivered').length;
-    const lastMonthConversionRate = lastMonthTotalOrders > 0 
-      ? ((lastMonthDeliveredOrders / lastMonthTotalOrders) * 100)
-      : 0;
-    const conversionChange = lastMonthConversionRate > 0 
-      ? ((conversionRate - lastMonthConversionRate) / lastMonthConversionRate * 100).toFixed(1)
-      : 0;
-
-    // Average order value
-    const avgOrderValue = totalOrders > 0 
-      ? (revenue / totalOrders).toFixed(2)
-      : 0;
-    const lastMonthAvgOrderValue = lastMonthTotalOrders > 0 
-      ? (lastMonthRevenue / lastMonthTotalOrders)
-      : 0;
-    const avgOrderValueChange = lastMonthAvgOrderValue > 0 
-      ? ((avgOrderValue - lastMonthAvgOrderValue) / lastMonthAvgOrderValue * 100).toFixed(1)
-      : 0;
-
-    res.json({
-      stats: {
-        totalOrders: {
-          value: totalOrders,
-          change: parseFloat(ordersChange)
-        },
-        refusedOrders: {
-          value: refusedOrders,
-          change: parseFloat(refusedChange)
-        },
-        revenue: {
-          value: revenue.toFixed(2),
-          change: parseFloat(revenueChange)
-        },
-        activeCustomers: {
-          value: activeCustomers,
-          change: parseFloat(customersChange)
-        },
-        campaignsSent: {
-          value: campaignsSent,
-          change: parseFloat(campaignsChange)
-        },
-        chatbotSessions: {
-          value: chatbotSessions,
-          change: chatbotChange
-        },
-        conversionRate: {
-          value: parseFloat(conversionRate),
-          change: parseFloat(conversionChange)
-        },
-        avgOrderValue: {
-          value: parseFloat(avgOrderValue),
-          change: parseFloat(avgOrderValueChange)
-        }
-      }
+    await fn(req, res);
+  } catch (err) {
+    console.error(`[DASHBOARD] ${req.path}`, err.message || err);
+    res.status(500).json({
+      success: false,
+      error: { message: "Could not load dashboard data", code: "DASHBOARD_ERROR" },
     });
-  } catch (error) {
-    console.error('Get dashboard stats error:', error);
-    res.status(500).json({ error: { message: 'Failed to get dashboard statistics', status: 500 } });
   }
-});
+};
 
-// Get recent orders
-router.get('/recent-orders', authenticateToken, async (req, res) => {
-  try {
-    const { limit = 10 } = req.query;
+function withRange(req, res, next) {
+  const key = req.query.range || "last_30_days";
+  if (!RANGE_KEYS.includes(key)) {
+    return res.status(400).json({ success: false, error: { message: "Invalid range", code: "VALIDATION" } });
+  }
+  req.range = resolveRange(key);
+  next();
+}
 
+// Postgres 22P02 = invalid input syntax (for example a uuid compared with an integer column).
+// For tables whose owner column is not a uuid we return an empty result instead of leaking
+// or crashing, and log the reason so the schema can be fixed.
+const isTypeMismatch = (error) => error && error.code === "22P02";
+
+/* ------------------------------ ORDERS ------------------------------ */
+
+async function fetchOrders(tenantId, w) {
+  const rows = [];
+  for (let from = 0; from < MAX_ROWS; from += PAGE) {
     const { data, error } = await supabase
-      .from('orders')
-      .select(`
-        *,
-        delivery_companies(name),
-        stores(name)
-      `)
-      .order('created_at', { ascending: false })
-      .limit(limit);
-
+      .from(COL.orders.table)
+      .select("id, status, amount, client_email, client_name, created_at")
+      .eq(COL.orders.tenant, tenantId)
+      .gte("created_at", iso(w.from))
+      .lt("created_at", iso(w.to))
+      .order("created_at", { ascending: true })
+      .order("id", { ascending: true }) // stable paging
+      .range(from, from + PAGE - 1);
     if (error) throw error;
-
-    res.json({ orders: data });
-  } catch (error) {
-    console.error('Get recent orders error:', error);
-    res.status(500).json({ error: { message: 'Failed to get recent orders', status: 500 } });
+    rows.push(...data);
+    if (data.length < PAGE) break;
   }
-});
+  return rows;
+}
 
-// Get campaign performance
-router.get('/campaign-performance', authenticateToken, async (req, res) => {
-  try {
-    const { data, error } = await supabase
-      .from('campaigns')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(5);
-
-    if (error) throw error;
-
-    res.json({ campaigns: data });
-  } catch (error) {
-    console.error('Get campaign performance error:', error);
-    res.status(500).json({ error: { message: 'Failed to get campaign performance', status: 500 } });
+function kpisFrom(rows) {
+  const byStatus = {};
+  const customers = new Set();
+  let revenue = 0;
+  for (const o of rows) {
+    const s = o.status || "unknown";
+    byStatus[s] = (byStatus[s] || 0) + 1;
+    if (s === "delivered") revenue += num(o.amount);
+    const who = o.client_email || o.client_name;
+    if (who) customers.add(who);
   }
-});
+  const total = rows.length;
+  const delivered = byStatus.delivered || 0;
+  return {
+    total,
+    delivered,
+    refused: byStatus.refused || 0,
+    pending: byStatus.pending || 0,
+    returned: byStatus.returned || 0,
+    byStatus,
+    revenue,
+    customers: customers.size,
+    avgOrderValue: delivered ? revenue / delivered : null,
+    deliveryRate: pct(delivered, total),
+  };
+}
+
+function seriesFrom(rows) {
+  const m = new Map();
+  for (const o of rows) {
+    const d = DAY_FMT.format(new Date(o.created_at));
+    const e = m.get(d) || { orders: 0, revenue: 0 };
+    e.orders++;
+    if (o.status === "delivered") e.revenue += num(o.amount);
+    m.set(d, e);
+  }
+  return m;
+}
+
+/* ----------------------------- WHATSAPP ----------------------------- */
+
+async function whatsappKpis(tenantId, w) {
+  const { data, error } = await supabase
+    .from(COL.campaigns.table)
+    .select("status, report")
+    .eq(COL.campaigns.tenant, tenantId)
+    .gte("sent_at", iso(w.from))
+    .lt("sent_at", iso(w.to))
+    .limit(1000);
+  if (error) throw error;
+
+  let campaignsSent = 0, sent = 0, delivered = 0, read = 0, failed = 0;
+  for (const c of data || []) {
+    if (c.status === "Envoyée") campaignsSent++;
+    const r = c.report || {};
+    sent += num(r.sent);
+    delivered += num(r.delivered);
+    read += num(r.read);
+    failed += num(r.failed);
+  }
+  return {
+    campaignsSent,
+    messagesSent: sent,
+    delivered,
+    read,
+    failed,
+    deliveryRate: pct(delivered, sent),
+    readRate: pct(read, sent),
+  };
+}
+
+/* ------------------------------ ROUTES ------------------------------ */
+
+router.get("/stats", withRange, wrap(async (req, res) => {
+  const t = req.tenantId;
+  const { current: c, previous: p } = req.range;
+
+  const [curRows, prevRows, wc, wp] = await Promise.all([
+    fetchOrders(t, c),
+    fetchOrders(t, p),
+    whatsappKpis(t, c),
+    whatsappKpis(t, p),
+  ]);
+
+  const byDay = seriesFrom(curRows);
+  const trend = eachDay(c.from, c.to).map((day) => ({
+    date: day,
+    orders: byDay.get(day)?.orders || 0,
+    revenue: byDay.get(day)?.revenue || 0,
+  }));
+
+  res.json({
+    range: { key: req.range.key, from: iso(c.from), to: iso(c.to), previousFrom: iso(p.from), previousTo: iso(p.to) },
+    orders: { current: kpisFrom(curRows), previous: kpisFrom(prevRows) },
+    whatsapp: { current: wc, previous: wp },
+    trend,
+  });
+}));
+
+router.get("/recent-orders", wrap(async (req, res) => {
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 5, 1), 20);
+  const { data, error } = await supabase
+    .from(COL.orders.table)
+    .select("id, order_number, client_name, amount, status, created_at") // no joins: there is no FK to stores
+    .eq(COL.orders.tenant, req.tenantId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+
+  res.json({
+    orders: (data || []).map((o) => ({
+      id: o.id,
+      orderNumber: o.order_number,
+      customer: o.client_name || null,
+      amount: num(o.amount),
+      status: o.status || "unknown",
+      createdAt: o.created_at,
+    })),
+  });
+}));
+
+router.get("/campaign-performance", wrap(async (req, res) => {
+  const { data, error } = await supabase
+    .from(COL.campaigns.table)
+    .select("id, name, status, created_at, sent_at, report, audiences ( name )")
+    .eq(COL.campaigns.tenant, req.tenantId)
+    .order("created_at", { ascending: false })
+    .limit(5);
+  if (error) throw error;
+
+  res.json({
+    campaigns: (data || []).map((c) => {
+      const r = c.report || {};
+      const sent = num(r.sent);
+      return {
+        id: c.id,
+        name: c.name,
+        status: c.status,
+        audienceName: c.audiences?.name || null,
+        createdAt: c.created_at,
+        sentAt: c.sent_at || null,
+        total: r.total ?? null,
+        sent,
+        delivered: num(r.delivered),
+        read: num(r.read),
+        failed: num(r.failed),
+        deliveryRate: pct(num(r.delivered), sent),
+        readRate: pct(num(r.read), sent),
+        hasReport: !!c.report,
+      };
+    }),
+  });
+}));
+
+router.get("/audience-overview", wrap(async (req, res) => {
+  const { data, error, count } = await supabase
+    .from(COL.audiences.table)
+    .select("id, name, size", { count: "exact" })
+    .eq(COL.audiences.tenant, req.tenantId)
+    .order("size", { ascending: false, nullsFirst: false })
+    .limit(500);
+
+  if (isTypeMismatch(error)) {
+    console.warn(`[DASHBOARD] ${COL.audiences.table}.${COL.audiences.tenant} is not a uuid column: returning no audiences`);
+    return res.json({ totalAudiences: 0, totalContacts: 0, largest: [] });
+  }
+  if (error) throw error;
+
+  const rows = (data || []).map((a) => ({ id: a.id, name: a.name, size: num(a.size) }));
+  res.json({
+    totalAudiences: count ?? rows.length,
+    totalContacts: rows.reduce((s, a) => s + a.size, 0), // overlapping audiences are double-counted
+    largest: rows.slice(0, 5),
+  });
+}));
+
+router.get("/chatbot-status", wrap(async (req, res) => {
+  const { data, error } = await supabase
+    .from(COL.chatbots.table)
+    .select("*")
+    .eq(COL.chatbots.tenant, req.tenantId);
+
+  if (isTypeMismatch(error)) {
+    // chatbots.user_id is an integer, the logged-in id is a uuid: no safe link exists yet.
+    // Return nothing rather than guess, which could expose another merchant's chatbots.
+    console.warn(`[DASHBOARD] ${COL.chatbots.table}.${COL.chatbots.tenant} is not a uuid column: returning no chatbots`);
+    return res.json({ total: 0, active: 0, chatbots: [] });
+  }
+  if (error) throw error;
+
+  const bots = (data || []).map((b) => ({
+    id: b.id,
+    name: b.name ?? null,
+    isActive: b.is_active === true,
+    channels: Object.entries(b.channels || {}).filter(([, on]) => on === true).map(([k]) => k),
+    scenarioCount: Array.isArray(b.scenarios) ? b.scenarios.length : 0,
+    updatedAt: b.updated_at ?? null,
+  }));
+  res.json({ total: bots.length, active: bots.filter((b) => b.isActive).length, chatbots: bots });
+}));
 
 module.exports = router;

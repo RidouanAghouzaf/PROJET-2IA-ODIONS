@@ -1,112 +1,54 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const { supabase } = require('../config/supabase');
-const { authenticateToken } = require('../middleware/auth');
-const { v4: uuidv4 } = require('uuid');  // for unique session IDs
+const { supabase } = require("../config/supabase");
+const { v4: uuidv4 } = require("uuid");
 
-// ================= GET ALL CHATBOTS =================
-router.get('/', authenticateToken, async (req, res) => {
+// ============ GET ALL CHATBOTS ============
+router.get("/", async (req, res) => {
   try {
     const { data, error } = await supabase
-      .from('chatbots')
-      .select('*')
-      .eq('user_id', req.user.id)
-      .order('created_at', { ascending: false });
+      .from("chatbots")
+      .select("*")
+      .order("created_at", { ascending: false });
 
     if (error) throw error;
-    res.json({ chatbots: data });
+    res.json(data);
   } catch (err) {
-    console.error('❌ Failed to fetch chatbots:', err);
-    res.status(500).json({ error: { message: 'Failed to fetch chatbots', status: 500 } });
-  }
-});
-// ================= POST MESSAGE TO A CHATBOT SESSION =================
-router.post('/chatbots/:chatbotId/sessions/:sessionId/messages', authenticateToken, async (req, res) => {
-  try {
-    const { chatbotId, sessionId } = req.params;
-    const { message, role } = req.body;
-
-    // Validate user owns the chatbot
-    const { data: chatbot, error: chatbotError } = await supabase
-      .from('chatbots')
-      .select('id, user_id')
-      .eq('id', chatbotId)
-      .eq('user_id', req.user.id)
-      .single();
-
-    if (chatbotError || !chatbot) {
-      return res.status(404).json({ error: { message: 'Chatbot not found or access denied' } });
-    }
-
-    // Fetch existing session
-    const { data: session, error: sessionError } = await supabase
-      .from('chatbot_sessions')
-      .select('*')
-      .eq('id', sessionId)
-      .eq('bot_id', chatbotId)
-      .single();
-
-    if (sessionError || !session) {
-      return res.status(404).json({ error: { message: 'Session not found or does not belong to chatbot' } });
-    }
-
-    // Append the message to the session
-    const updatedMessages = [
-      ...session.messages,
-      {
-        role: role || 'user',
-        content: message,
-        timestamp: new Date().toISOString(),
-      },
-    ];
-
-    const { error: updateError } = await supabase
-      .from('chatbot_sessions')
-      .update({
-        messages: updatedMessages,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', sessionId);
-
-    if (updateError) throw updateError;
-
-    // You can replace this with logic to generate a bot response later
-    res.status(200).json({
-      message: 'Message added to session',
-      messages: updatedMessages,
-    });
-  } catch (err) {
-    console.error('❌ Failed to send message to session:', err);
-    res.status(500).json({ error: { message: 'Failed to send message', status: 500 } });
+    console.error("Get chatbots error:", err);
+    res.status(500).json({ error: err.message });
   }
 });
 
-// ================= CREATE CHATBOT =================
-router.post('/', authenticateToken, async (req, res) => {
+// ============ CREATE CHATBOT ============
+router.post("/", async (req, res) => {
   try {
-    const { bot_name, welcome_message, channels, is_active } = req.body;
+    const { bot_name, welcome_message, channels, user_id } = req.body;
+
+    if (!bot_name) {
+      return res.status(400).json({ error: "Bot name is required" });
+    }
 
     const chatbotData = {
-      user_id: req.user.id,
-      bot_name: bot_name || 'Nouveau Chatbot',
-      welcome_message: welcome_message || 'Bonjour ! Comment puis-je vous aider ?',
+      bot_name,
+      welcome_message: welcome_message || "Bonjour ! Comment puis-je vous aider ?",
       channels: channels || { facebook: false, whatsapp: false, website: true },
-      is_active: is_active ?? true,
+      is_active: true,
+      user_id: user_id || 1, // TEMP default for testing
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
 
-    const { data: chatbot, error } = await supabase
-      .from('chatbots')
+    const { data, error } = await supabase
+      .from("chatbots")
       .insert([chatbotData])
       .select()
       .single();
 
     if (error) throw error;
 
-    // Automatically create an initial session for the new chatbot
+    // Auto create initial session
     const sessionData = {
-      bot_id: chatbot.id,
+      bot_id: data.id,
       session_id: uuidv4(),
       messages: [],
       started_at: new Date().toISOString(),
@@ -115,87 +57,66 @@ router.post('/', authenticateToken, async (req, res) => {
     };
 
     const { error: sessionError } = await supabase
-      .from('chatbot_sessions')
+      .from("chatbot_sessions")
       .insert([sessionData]);
 
     if (sessionError) {
-      console.error('❌ Failed to create initial session:', sessionError);
-      // Note: don't throw here, chatbot creation succeeded
+      console.error("Failed to create chatbot session:", sessionError);
     }
 
-    res.status(201).json({ message: 'Chatbot created successfully', chatbot });
+    res.status(201).json({ message: "Chatbot created successfully", chatbot: data });
   } catch (err) {
-    console.error('❌ Failed to create chatbot:', err);
-    res.status(500).json({ error: { message: 'Failed to create chatbot', status: 500 } });
+    console.error("Create chatbot error:", err);
+    res.status(500).json({ error: err.message });
   }
 });
 
-// ================= UPDATE CHATBOT =================
-router.put('/:id', authenticateToken, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { bot_name, welcome_message, channels, is_active } = req.body;
-
-    const { data, error } = await supabase
-      .from('chatbots')
-      .update({
-        bot_name,
-        welcome_message,
-        channels,
-        is_active,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', id)
-      .eq('user_id', req.user.id)
-      .select()
-      .single();
-
-    if (error) throw error;
-    res.json({ message: 'Chatbot updated successfully', chatbot: data });
-  } catch (err) {
-    console.error('❌ Failed to update chatbot:', err);
-    res.status(500).json({ error: { message: 'Failed to update chatbot', status: 500 } });
-  }
-});
-
-// ================= DELETE CHATBOT =================
-router.delete('/:id', authenticateToken, async (req, res) => {
+// ============ DELETE CHATBOT ============
+router.delete("/:id", async (req, res) => {
   try {
     const { id } = req.params;
 
     const { error } = await supabase
-      .from('chatbots')
+      .from("chatbots")
       .delete()
-      .eq('id', id)
-      .eq('user_id', req.user.id);
+      .eq("id", id);
 
     if (error) throw error;
-    res.json({ message: 'Chatbot deleted successfully' });
+
+    res.json({ success: true, message: "Chatbot deleted successfully" });
   } catch (err) {
-    console.error('❌ Failed to delete chatbot:', err);
-    res.status(500).json({ error: { message: 'Failed to delete chatbot', status: 500 } });
+    console.error("Delete chatbot error:", err);
+    res.status(500).json({ error: err.message });
   }
 });
 
-// ================= CREATE SESSION FOR A CHATBOT =================
-router.post('/:id/sessions', authenticateToken, async (req, res) => {
+// ============ GET ALL SESSIONS ============
+router.get("/:id/sessions", async (req, res) => {
   try {
-    const bot_id = parseInt(req.params.id, 10);
+    const { id } = req.params;
 
-    // Check chatbot ownership
-    const { data: chatbot, error: chatbotError } = await supabase
-      .from('chatbots')
-      .select('id')
-      .eq('id', bot_id)
-      .eq('user_id', req.user.id)
-      .single();
+    const { data, error } = await supabase
+      .from("chatbot_sessions")
+      .select("*")
+      .eq("bot_id", id)
+      .order("created_at", { ascending: false });
 
-    if (chatbotError || !chatbot) {
-      return res.status(404).json({ error: { message: 'Chatbot not found or access denied' } });
-    }
+    if (error) throw error;
+
+    res.json({ sessions: data });
+  } catch (err) {
+    console.error("Get sessions error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============ CREATE SESSION ============
+router.post("/:id/sessions", async (req, res) => {
+  try {
+    const { id } = req.params;
 
     const sessionData = {
-      bot_id,
+      bot_id: id,
       session_id: uuidv4(),
       messages: [],
       started_at: new Date().toISOString(),
@@ -204,111 +125,72 @@ router.post('/:id/sessions', authenticateToken, async (req, res) => {
     };
 
     const { data, error } = await supabase
-      .from('chatbot_sessions')
+      .from("chatbot_sessions")
       .insert([sessionData])
       .select()
       .single();
 
     if (error) throw error;
 
-    res.status(201).json({ message: 'Session created successfully', session: data });
+    res.status(201).json({ message: "Session created successfully", session: data });
   } catch (err) {
-    console.error('❌ Failed to create session:', err);
-    res.status(500).json({ error: { message: 'Failed to create session', status: 500 } });
+    console.error("Create session error:", err);
+    res.status(500).json({ error: err.message });
   }
 });
 
-// ================= GET ALL SESSIONS FOR A CHATBOT =================
-router.get('/:id/sessions', authenticateToken, async (req, res) => {
+// ============ ADD MESSAGE TO SESSION (✔️ UPDATED) ============
+router.post("/sessions/:sessionId/messages", async (req, res) => {
   try {
-    const bot_id = parseInt(req.params.id, 10);
+    const { sessionId } = req.params;
+    const { message, role } = req.body;
 
-    // Verify ownership
-    const { data: chatbot, error: chatbotError } = await supabase
-      .from('chatbots')
-      .select('id')
-      .eq('id', bot_id)
-      .eq('user_id', req.user.id)
-      .single();
-
-    if (chatbotError || !chatbot) {
-      return res.status(404).json({ error: { message: 'Chatbot not found or access denied' } });
-    }
-
-    const { data, error } = await supabase
-      .from('chatbot_sessions')
-      .select('*')
-      .eq('bot_id', bot_id)
-      .order('created_at', { ascending: false });
-
-    if (error) throw error;
-
-    res.json({ sessions: data });
-  } catch (err) {
-    console.error('❌ Failed to fetch sessions:', err);
-    res.status(500).json({ error: { message: 'Failed to fetch sessions', status: 500 } });
-  }
-});
-
-// ================= GET SINGLE SESSION BY ID =================
-router.get('/sessions/:sessionId', authenticateToken, async (req, res) => {
-  try {
-    const sessionId = req.params.sessionId;
-
-    // Fetch session with related chatbot's user_id
-    const { data, error } = await supabase
-      .from('chatbot_sessions')
-      .select('*, chatbot:bot_id(user_id)')
-      .eq('id', sessionId)
-      .single();
-
-    if (error || !data) {
-      return res.status(404).json({ error: { message: 'Session not found' } });
-    }
-
-    // Check if the session belongs to the authenticated user
-    if (data.chatbot.user_id !== req.user.id) {
-      return res.status(403).json({ error: { message: 'Access denied' } });
-    }
-
-    res.json({ session: data });
-  } catch (err) {
-    console.error('❌ Failed to fetch session:', err);
-    res.status(500).json({ error: { message: 'Failed to fetch session', status: 500 } });
-  }
-});
-
-// ================= DELETE SESSION BY ID =================
-router.delete('/sessions/:sessionId', authenticateToken, async (req, res) => {
-  try {
-    const sessionId = req.params.sessionId;
-
-    // Verify ownership via chatbot user_id
     const { data: session, error: sessionError } = await supabase
-      .from('chatbot_sessions')
-      .select('chatbot:bot_id(user_id)')
-      .eq('id', sessionId)
+      .from("chatbot_sessions")
+      .select("messages")
+      .eq("id", sessionId)
       .single();
 
     if (sessionError || !session) {
-      return res.status(404).json({ error: { message: 'Session not found' } });
+      return res.status(404).json({ error: "Session not found" });
     }
 
-    if (session.chatbot.user_id !== req.user.id) {
-      return res.status(403).json({ error: { message: 'Access denied' } });
-    }
+    // Ajout du message utilisateur
+    const updatedMessages = [
+      ...session.messages,
+      {
+        role: role || "user",
+        content: message,
+        timestamp: new Date().toISOString(),
+      },
+    ];
+
+    // Simulation d'une réponse automatique du bot
+    const botReply = `🤖 Réponse automatique : "${message}"`;
+    updatedMessages.push({
+      role: "assistant",
+      content: botReply,
+      timestamp: new Date().toISOString(),
+    });
 
     const { error } = await supabase
-      .from('chatbot_sessions')
-      .delete()
-      .eq('id', sessionId);
+      .from("chatbot_sessions")
+      .update({
+        messages: updatedMessages,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", sessionId);
 
     if (error) throw error;
 
-    res.json({ message: 'Session deleted successfully' });
+    res.json({
+      message: "Message added successfully",
+      messages: updatedMessages,
+      botReply,
+    });
   } catch (err) {
-    console.error('❌ Failed to delete session:', err);
-    res.status(500).json({ error: { message: 'Failed to delete session', status: 500 } });
+    console.error("Add message error:", err);
+    res.status(500).json({ error: err.message });
   }
 });
 
